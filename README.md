@@ -183,7 +183,7 @@ pip install -r requirements.txt
 
 ### Run
 ```bash
-python run.py
+python app.py
 # Login page: http://localhost:8000/login
 # Admin panel: http://localhost:8000/panel
 ```

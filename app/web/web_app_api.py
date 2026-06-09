@@ -1,8 +1,11 @@
 import logging
 from datetime import datetime, timedelta
 from typing import Optional
+from urllib.parse import quote, urlparse
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import Response
 from pydantic import BaseModel
 from sqlalchemy import select
 
@@ -247,7 +250,7 @@ async def get_products_by_group(group_id: int, auth: dict = Depends(authenticate
             for img in imgs:
                 url = img.get("URL", "")
                 if url:
-                    images.append(url)
+                    images.append(f"/webapp/api/image-proxy?url={quote(url, safe='')}")
 
         status = product.get("status", "")
 
@@ -266,6 +269,28 @@ async def get_products_by_group(group_id: int, auth: dict = Depends(authenticate
         "group_name": group.get("group_name", "Guruh"),
         "products": products,
     }
+
+
+@router.get("/image-proxy")
+async def image_proxy(url: str):
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https") or not parsed.netloc:
+        raise HTTPException(status_code=400, detail="Yaroqsiz URL")
+
+    try:
+        async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
+            upstream = await client.get(url)
+            upstream.raise_for_status()
+    except Exception as e:
+        logger.error("❌ image_proxy FAILED for %s: %s", url, e)
+        raise HTTPException(status_code=502, detail="Rasm yuklanmadi")
+
+    content_type = upstream.headers.get("content-type", "image/jpeg")
+    return Response(
+        content=upstream.content,
+        media_type=content_type,
+        headers={"Cache-Control": "public, max-age=86400"},
+    )
 
 
 @router.get("/orders")
