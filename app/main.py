@@ -2,7 +2,8 @@ import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import HTMLResponse
 from jinja2 import Environment, FileSystemLoader
 from starlette.middleware.sessions import SessionMiddleware
 
@@ -12,6 +13,7 @@ from app.models import Base
 from app.services.bot_manager import BotManager
 from app.web.auth import AuthMiddleware, router as auth_router
 from app.web.routes import router as web_router
+from app.web.web_app_api import router as webapp_api_router
 
 logging.basicConfig(
     level=getattr(logging, LOG_LEVEL.upper(), logging.INFO),
@@ -49,6 +51,19 @@ app.add_middleware(SessionMiddleware, secret_key="mx-bot-secret-key-change-in-pr
 
 app.include_router(auth_router)
 app.include_router(web_router)
+app.include_router(webapp_api_router)
+
+
+@app.get("/webapp", response_class=HTMLResponse)
+async def webapp_page(request: Request):
+    env = request.app.state.jinja_env
+    template = env.get_template("webapp.html")
+    return HTMLResponse(template.render())
+
+
+@app.get("/webapp/", response_class=HTMLResponse)
+async def webapp_slash(request: Request):
+    return await webapp_page(request)
 
 
 def main():

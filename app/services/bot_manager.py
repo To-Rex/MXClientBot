@@ -5,10 +5,11 @@ from typing import Optional
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
-from aiogram.types import BotCommand
+from aiogram.types import BotCommand, MenuButtonWebApp, WebAppInfo
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, AsyncSession
 
+from app.config import WEBAPP_URL
 from app.handlers.router import create_router
 from app.models import Bot as BotModel
 
@@ -89,6 +90,19 @@ class BotManager:
             ])
         except Exception as e:
             logger.warning("Failed to set commands for bot %d: %s", bot_record.id, e)
+
+        if WEBAPP_URL:
+            try:
+                webapp_full_url = f"{WEBAPP_URL.rstrip('/')}/webapp?bot_id={bot_record.id}"
+                await bot.set_chat_menu_button(
+                    menu_button=MenuButtonWebApp(
+                        text="Web App",
+                        web_app=WebAppInfo(url=webapp_full_url),
+                    )
+                )
+                logger.info("Set WebApp menu button for bot %d: %s", bot_record.id, webapp_full_url)
+            except Exception as e:
+                logger.warning("Failed to set WebApp menu button for bot %d: %s", bot_record.id, e)
 
         task = asyncio.create_task(dp.start_polling(bot))
 

@@ -1,0 +1,613 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>MX Client Bot</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+:root {
+  --tg-bg: #1c1c1e;
+  --tg-text: #ffffff;
+  --tg-hint: #98989e;
+  --tg-link: #007aff;
+  --tg-button: #007aff;
+  --tg-button-text: #ffffff;
+  --tg-secondary-bg: #2c2c2e;
+  --tg-section-bg: #2c2c2e;
+  --tg-section-header: #98989e;
+  --tg-destructive: #ff3b30;
+  --tg-accent: #30d158;
+  --tg-card-bg: #2c2c2e;
+  --tg-border: #3a3a3c;
+  --tg-status-green: #30d158;
+  --tg-status-red: #ff3b30;
+  --tg-status-yellow: #ffcc00;
+}
+.light {
+  --tg-bg: #ffffff;
+  --tg-text: #000000;
+  --tg-hint: #8e8e93;
+  --tg-link: #007aff;
+  --tg-button: #007aff;
+  --tg-button-text: #ffffff;
+  --tg-secondary-bg: #f2f2f7;
+  --tg-section-bg: #f2f2f7;
+  --tg-section-header: #6d6d72;
+  --tg-destructive: #ff3b30;
+  --tg-accent: #34c759;
+  --tg-card-bg: #ffffff;
+  --tg-border: #e5e5ea;
+  --tg-status-green: #34c759;
+  --tg-status-red: #ff3b30;
+  --tg-status-yellow: #ffcc00;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: var(--tg-bg);
+  color: var(--tg-text);
+  min-height: 100vh;
+  padding-bottom: 70px;
+  -webkit-tap-highlight-color: transparent;
+}
+.header {
+  position: sticky; top: 0; z-index: 100;
+  background: var(--tg-secondary-bg);
+  padding: 12px 16px;
+  display: flex; align-items: center; gap: 12px;
+  border-bottom: 1px solid var(--tg-border);
+  backdrop-filter: blur(12px);
+}
+.header h1 { font-size: 18px; font-weight: 600; flex: 1; }
+.header .user-info { font-size: 13px; color: var(--tg-hint); }
+
+.page { display: none; padding: 16px; animation: fadeIn .2s ease; }
+.page.active { display: block; }
+@keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+
+.bottom-nav {
+  position: fixed; bottom: 0; left: 0; right: 0;
+  background: var(--tg-secondary-bg);
+  display: flex;
+  border-top: 1px solid var(--tg-border);
+  z-index: 100;
+  padding-bottom: env(safe-area-inset-bottom);
+}
+.bottom-nav button {
+  flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px;
+  padding: 8px 4px;
+  border: none; background: none;
+  color: var(--tg-hint);
+  font-size: 10px; font-weight: 500;
+  cursor: pointer;
+  transition: color .15s;
+}
+.bottom-nav button svg { width: 22px; height: 22px; }
+.bottom-nav button.active { color: var(--tg-link); }
+
+.card {
+  background: var(--tg-card-bg);
+  border-radius: 12px; padding: 14px;
+  margin-bottom: 10px;
+  border: 1px solid var(--tg-border);
+}
+.card h3 { font-size: 16px; margin-bottom: 8px; }
+.card p { font-size: 14px; color: var(--tg-hint); line-height: 1.5; }
+.card-row { display: flex; justify-content: space-between; align-items: center; padding: 6px 0; }
+.card-row .label { font-size: 14px; color: var(--tg-hint); }
+.card-row .value { font-size: 14px; font-weight: 500; }
+
+.fields { display: flex; flex-direction: column; gap: 6px; }
+.field-item { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--tg-border); font-size: 14px; }
+.field-item:last-child { border-bottom: none; }
+.field-item .flabel { color: var(--tg-hint); }
+
+.gallery { display: flex; gap: 8px; overflow-x: auto; margin-top: 10px; }
+.gallery img { width: 160px; height: 160px; object-fit: cover; border-radius: 10px; flex-shrink: 0; }
+
+.product-card {
+  background: var(--tg-card-bg);
+  border-radius: 12px;
+  overflow: hidden;
+  margin-bottom: 10px;
+  border: 1px solid var(--tg-border);
+}
+.product-card img { width: 100%; height: 200px; object-fit: cover; display: block; }
+.product-card .pc-body { padding: 12px; }
+.product-card .pc-name { font-size: 16px; font-weight: 600; margin-bottom: 4px; }
+.product-card .pc-meta { font-size: 13px; color: var(--tg-hint); margin-bottom: 8px; }
+.product-card .pc-status { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 4px; }
+.status-green { background: var(--tg-status-green); }
+.status-red { background: var(--tg-status-red); }
+.status-yellow { background: var(--tg-status-yellow); }
+
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  padding: 10px 20px; border-radius: 10px; border: none;
+  font-size: 14px; font-weight: 600; cursor: pointer;
+  transition: opacity .15s;
+  width: 100%; text-align: center;
+}
+.btn:active { opacity: 0.7; }
+.btn-primary { background: var(--tg-button); color: var(--tg-button-text); }
+.btn-outline { background: transparent; color: var(--tg-link); border: 1px solid var(--tg-link); }
+.btn-danger { background: var(--tg-destructive); color: #fff; }
+.btn-sm { padding: 6px 12px; font-size: 13px; width: auto; border-radius: 8px; }
+.btn-row { display: flex; gap: 8px; margin-top: 10px; }
+.btn-row .btn { flex: 1; }
+
+.input-group { margin-bottom: 12px; }
+.input-group label { display: block; font-size: 13px; color: var(--tg-hint); margin-bottom: 4px; }
+.input-group input {
+  width: 100%; padding: 12px; border-radius: 10px; border: 1px solid var(--tg-border);
+  background: var(--tg-card-bg); color: var(--tg-text); font-size: 15px; outline: none;
+}
+.input-group input:focus { border-color: var(--tg-link); }
+
+.loader {
+  display: flex; justify-content: center; padding: 32px;
+}
+.spinner {
+  width: 32px; height: 32px; border: 3px solid var(--tg-border);
+  border-top-color: var(--tg-link); border-radius: 50%;
+  animation: spin .6s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.empty { text-align: center; padding: 32px 16px; color: var(--tg-hint); font-size: 14px; }
+.empty svg { width: 48px; height: 48px; margin-bottom: 8px; opacity: 0.4; }
+
+.alert { padding: 12px 16px; border-radius: 10px; margin-bottom: 10px; font-size: 14px; }
+.alert-error { background: rgba(255,59,48,0.15); color: var(--tg-destructive); }
+.alert-success { background: rgba(48,209,88,0.15); color: var(--tg-accent); }
+
+.modal-overlay {
+  display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.5); z-index: 200;
+  align-items: center; justify-content: center; padding: 16px;
+}
+.modal-overlay.show { display: flex; }
+.modal {
+  background: var(--tg-card-bg); border-radius: 16px; padding: 20px;
+  width: 100%; max-width: 360px;
+}
+.modal h3 { margin-bottom: 16px; font-size: 18px; }
+.modal .modal-actions { display: flex; gap: 8px; margin-top: 16px; }
+.modal .modal-actions .btn { flex: 1; }
+
+.tabs { display: flex; gap: 4px; padding: 8px; background: var(--tg-secondary-bg); border-radius: 10px; margin-bottom: 12px; }
+.tabs button { flex: 1; padding: 8px; border: none; border-radius: 8px; background: transparent; color: var(--tg-hint); font-size: 13px; font-weight: 500; cursor: pointer; }
+.tabs button.active { background: var(--tg-card-bg); color: var(--tg-text); }
+
+.order-card { background: var(--tg-card-bg); border-radius: 12px; padding: 14px; margin-bottom: 10px; border: 1px solid var(--tg-border); }
+.order-card .order-header { display: flex; justify-content: space-between; align-items: start; margin-bottom: 8px; }
+.order-card .order-id { font-weight: 700; font-size: 15px; }
+.order-card .order-sum { font-weight: 600; color: var(--tg-accent); }
+.order-card .order-item { font-size: 13px; padding: 3px 0; color: var(--tg-hint); }
+.order-card .order-actions { display: flex; gap: 8px; margin-top: 10px; }
+
+.akt-card { background: var(--tg-card-bg); border-radius: 12px; padding: 14px; margin-bottom: 10px; border: 1px solid var(--tg-border); }
+.akt-card .akt-header { display: flex; justify-content: space-between; margin-bottom: 6px; }
+.akt-card .akt-type { font-weight: 600; font-size: 14px; }
+.akt-card .akt-detail { font-size: 13px; color: var(--tg-hint); padding: 2px 0; }
+
+.product-image-placeholder {
+  width: 100%; height: 200px;
+  background: var(--tg-secondary-bg);
+  display: flex; align-items: center; justify-content: center;
+  color: var(--tg-hint); font-size: 14px;
+}
+</style>
+</head>
+<body>
+
+<div id="app">
+  <div class="header">
+    <h1 id="companyName">...</h1>
+    <span class="user-info" id="headerUserInfo"></span>
+  </div>
+
+  <div id="pageProfile" class="page active"></div>
+  <div id="pageProducts" class="page"></div>
+  <div id="pageOrders" class="page"></div>
+  <div id="pageAkt" class="page"></div>
+  <div id="pageInfo" class="page"></div>
+  <div id="pageRegister" class="page"></div>
+
+  <div class="bottom-nav" id="bottomNav">
+    <button onclick="showPage('profile')" id="navProfile" class="active">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M6 21v-2a4 4 0 014-4h4a4 4 0 014 4v2"/></svg>
+      Profil
+    </button>
+    <button onclick="showPage('products')" id="navProducts">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="20" height="15" rx="2"/><path d="M16 7V5a2 2 0 00-2-2h-4a2 2 0 00-2 2v2"/><path d="M2 12h20"/></svg>
+      Mahsulotlar
+    </button>
+    <button onclick="showPage('orders')" id="navOrders">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+      Buyurtmalar
+    </button>
+    <button onclick="showPage('akt')" id="navAkt">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/><path d="M12 7v5l3 3"/></svg>
+      Akt sverka
+    </button>
+    <button onclick="showPage('info')" id="navInfo">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
+      Info
+    </button>
+  </div>
+</div>
+
+<div class="modal-overlay" id="qtyModal">
+  <div class="modal">
+    <h3 id="qtyModalTitle">Miqdor kiriting</h3>
+    <div class="input-group">
+      <label>Miqdor (dona)</label>
+      <input type="number" id="qtyInput" placeholder="Masalan: 3" step="0.01" min="0.01">
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-outline" onclick="closeQtyModal()">Bekor qilish</button>
+      <button class="btn btn-primary" id="qtyConfirmBtn">Tasdiqlash</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const Tg = window.Telegram.WebApp;
+Tg.ready();
+Tg.expand();
+
+const baseUrl = window.location.origin + window.location.pathname.replace(/\/[^/]*$/, '');
+const botId = new URLSearchParams(window.location.search).get('bot_id') || '1';
+const initData = Tg.initData || '';
+
+let currentUser = null;
+let currentPage = 'profile';
+let selectedProduct = null;
+let selectedOrder = null;
+let qtyCallback = null;
+
+function apiUrl(path) { return `${baseUrl}/webapp/api${path}?bot_id=${botId}`; }
+
+async function apiCall(method, path, body) {
+  const headers = { 'X-Telegram-Init-Data': initData, 'Content-Type': 'application/json' };
+  const opts = { method, headers };
+  if (body) opts.body = JSON.stringify(body);
+  const resp = await fetch(apiUrl(path), opts);
+  const data = await resp.json().catch(() => ({}));
+  if (!resp.ok) throw new Error(data.detail || 'Xatolik yuz berdi');
+  return data;
+}
+
+function applyTheme() {
+  const scheme = Tg.colorScheme || 'dark';
+  document.body.className = scheme === 'light' ? 'light' : '';
+  if (Tg.themeParams) {
+    const p = Tg.themeParams;
+    if (p.bg_color) document.documentElement.style.setProperty('--tg-bg', p.bg_color);
+    if (p.text_color) document.documentElement.style.setProperty('--tg-text', p.text_color);
+    if (p.hint_color) document.documentElement.style.setProperty('--tg-hint', p.hint_color);
+    if (p.link_color) document.documentElement.style.setProperty('--tg-link', p.link_color);
+    if (p.button_color) document.documentElement.style.setProperty('--tg-button', p.button_color);
+    if (p.button_text_color) document.documentElement.style.setProperty('--tg-button-text', p.button_text_color);
+    if (p.secondary_bg_color) document.documentElement.style.setProperty('--tg-secondary-bg', p.secondary_bg_color);
+    if (p.section_bg_color) document.documentElement.style.setProperty('--tg-section-bg', p.section_bg_color);
+  }
+}
+applyTheme();
+Tg.onEvent('themeChanged', applyTheme);
+
+Tg.MainButton.setText('Ro\'yxatdan o\'tish').hide();
+
+function showPage(name) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.bottom-nav button').forEach(b => b.classList.remove('active'));
+
+  const pageEl = document.getElementById('page' + name.charAt(0).toUpperCase() + name.slice(1));
+  if (pageEl) pageEl.classList.add('active');
+  const navEl = document.getElementById('nav' + name.charAt(0).toUpperCase() + name.slice(1));
+  if (navEl) navEl.classList.add('active');
+
+  currentPage = name;
+  loadPage(name);
+}
+
+function loadPage(name) {
+  if (!currentUser) return;
+  if (!currentUser.registered && name !== 'register' && name !== 'profile') {
+    showPage('register');
+    return;
+  }
+  switch(name) {
+    case 'profile': loadProfile(); break;
+    case 'products': loadProductGroups(); break;
+    case 'orders': loadOrders(); break;
+    case 'akt': loadAktSverka(); break;
+    case 'info': loadInfo(); break;
+    case 'register': showRegister(); break;
+  }
+}
+
+function renderLoader(pageId) {
+  document.getElementById('page' + pageId).innerHTML = '<div class="loader"><div class="spinner"></div></div>';
+}
+
+function setHeader(company, userId) {
+  document.getElementById('companyName').textContent = company || 'MX Client Bot';
+  document.getElementById('headerUserInfo').textContent = userId ? 'ID: ' + userId : '';
+}
+
+function renderAlert(type, msg) {
+  return `<div class="alert alert-${type}">${msg}</div>`;
+}
+
+function formatNum(n) { return Number(n).toLocaleString('ru-RU').replace(/,/g, ' '); }
+
+// --- Registration ---
+function showRegister() {
+  const el = document.getElementById('pageRegister');
+  el.innerHTML = `
+    <div class="card">
+      <h3>Ro'yxatdan o'tish</h3>
+      <p style="margin-bottom:12px">Iltimos, telefon raqamingizni kiriting.</p>
+      <div class="input-group">
+        <label>Telefon raqam</label>
+        <input type="tel" id="regPhone" placeholder="998 XX XXX XX XX">
+      </div>
+      <p id="regError" style="color:var(--tg-destructive);font-size:13px;margin-bottom:8px;display:none"></p>
+      <button class="btn btn-primary" onclick="doRegister()">Ro'yxatdan o'tish</button>
+    </div>
+  `;
+}
+
+async function doRegister() {
+  const phone = document.getElementById('regPhone').value.trim();
+  const errEl = document.getElementById('regError');
+  if (!phone) { errEl.textContent = 'Telefon raqamni kiriting'; errEl.style.display = 'block'; return; }
+
+  try {
+    await apiCall('POST', '/register', { phone_number: phone });
+    currentUser.registered = true;
+    currentUser.phone_number = phone;
+    showPage('profile');
+  } catch(e) {
+    errEl.textContent = e.message; errEl.style.display = 'block';
+  }
+}
+
+// --- Profile ---
+async function loadProfile() {
+  renderLoader('Profile');
+  try {
+    const data = await apiCall('GET', '/profile');
+    const el = document.getElementById('pageProfile');
+    let html = '';
+    if (data.fields && data.fields.length > 0) {
+      html += '<div class="card"><h3>Profil</h3><div class="fields">';
+      data.fields.forEach(f => {
+        html += `<div class="field-item"><span class="flabel">${f.label}</span><span>${f.value}</span></div>`;
+      });
+      html += '</div></div>';
+    }
+    if (data.images && data.images.length > 0) {
+      html += '<div class="gallery">';
+      data.images.forEach(url => { html += `<img src="${url}" alt="" loading="lazy">`; });
+      html += '</div>';
+    }
+    el.innerHTML = html || '<div class="empty">Profil ma\'lumotlari topilmadi</div>';
+  } catch(e) {
+    document.getElementById('pageProfile').innerHTML = renderAlert('error', e.message);
+  }
+}
+
+// --- Info ---
+async function loadInfo() {
+  renderLoader('Info');
+  try {
+    const data = await apiCall('GET', '/info');
+    let html = `<div class="card"><h3>${data.company}</h3><div class="fields">`;
+    data.details.forEach(d => {
+      html += `<div class="field-item"><span class="flabel">${d.label}</span><span>${d.value}</span></div>`;
+    });
+    html += '</div></div>';
+    document.getElementById('pageInfo').innerHTML = html || '<div class="empty">Ma\'lumot topilmadi</div>';
+  } catch(e) {
+    document.getElementById('pageInfo').innerHTML = renderAlert('error', e.message);
+  }
+}
+
+// --- Products ---
+async function loadProductGroups() {
+  renderLoader('Products');
+  try {
+    const data = await apiCall('GET', '/products');
+    const el = document.getElementById('pageProducts');
+    if (!data.groups || data.groups.length === 0) {
+      el.innerHTML = '<div class="empty">Mahsulotlar topilmadi</div>';
+      return;
+    }
+    let html = '<h3 style="margin-bottom:12px">Mahsulot guruhlari</h3>';
+    data.groups.forEach(g => {
+      html += `<div class="card" onclick="loadProductsByGroup(${g.group_id}, '${g.group_name}')" style="cursor:pointer">
+        <div class="card-row"><span style="font-weight:600">${g.group_name}</span><span style="color:var(--tg-hint)">${g.product_count} ta</span></div>
+      </div>`;
+    });
+    el.innerHTML = html;
+  } catch(e) {
+    document.getElementById('pageProducts').innerHTML = renderAlert('error', e.message);
+  }
+}
+
+async function loadProductsByGroup(groupId, groupName) {
+  renderLoader('Products');
+  try {
+    const data = await apiCall('GET', `/products/${groupId}`);
+    const el = document.getElementById('pageProducts');
+    let html = `<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
+      <button class="btn btn-sm btn-outline" onclick="loadProductGroups()" style="width:auto">← Orqaga</button>
+      <h3>${groupName}</h3>
+    </div>`;
+    if (!data.products || data.products.length === 0) {
+      html += '<div class="empty">Bu guruhda mahsulotlar yo\'q</div>';
+    }
+    data.products.forEach(p => {
+      const statusIcon = { green: '🟢', red: '🔴', yellow: '🟡' }[p.status] || '';
+      const imgHtml = p.images.length > 0
+        ? `<img src="${p.images[0]}" alt="${p.name}" loading="lazy" onerror="this.parentElement.querySelector('.product-image-placeholder').style.display='flex';this.style.display='none'"><div class="product-image-placeholder" style="display:none">Rasm mavjud emas</div>`
+        : '<div class="product-image-placeholder">Rasm mavjud emas</div>';
+      html += `<div class="product-card">
+        ${imgHtml}
+        <div class="pc-body">
+          <div class="pc-name">${statusIcon} ${p.name}</div>
+          <div class="pc-meta">💰 ${formatNum(p.price)} ${p.currency}${p.qty ? ' | 📦 Qoldiq: ' + p.qty + ' ta' : ''}</div>
+          <button class="btn btn-primary btn-sm" onclick="startOrder(${p.id}, ${p.price}, '${p.name.replace(/'/g, "\\'")}')" style="width:auto">🛒 Buyurtma berish</button>
+        </div>
+      </div>`;
+    });
+    el.innerHTML = html;
+  } catch(e) {
+    document.getElementById('pageProducts').innerHTML = renderAlert('error', e.message);
+  }
+}
+
+function startOrder(productId, price, name) {
+  selectedProduct = { id: productId, price: price, name: name };
+  openQtyModal('Buyurtma', async (qty) => {
+    try {
+      const result = await apiCall('POST', '/orders', { product_id: productId, price: price, qty: parseFloat(qty) });
+      alert(`Buyurtma qabul qilindi!\nID: ${result.order_id}\nJami: ${formatNum(result.total)} UZS`);
+      showPage('orders');
+    } catch(e) { alert('Xatolik: ' + e.message); }
+  });
+}
+
+// --- Orders ---
+async function loadOrders() {
+  renderLoader('Orders');
+  try {
+    const data = await apiCall('GET', '/orders');
+    const el = document.getElementById('pageOrders');
+    if (!data.orders || data.orders.length === 0) {
+      el.innerHTML = '<div class="empty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/></svg>Hozircha buyurtmalar yo\'q</div>';
+      return;
+    }
+    let html = '<h3 style="margin-bottom:12px">Buyurtmalar</h3>';
+    data.orders.forEach(o => {
+      let itemsHtml = o.items.map(i => `<div class="order-item">▪️ ${i.name} — ${i.qty} ta (${formatNum(i.summa)} UZS)</div>`).join('');
+      html += `<div class="order-card">
+        <div class="order-header"><span class="order-id">📋 Buyurtma #${o.id}</span><span class="order-sum">${formatNum(o.total_sum)} UZS</span></div>
+        <div class="order-item">👤 ${o.name}</div>
+        ${itemsHtml}
+        <div class="order-actions">
+          <button class="btn btn-outline btn-sm" onclick="startEditOrder(${o.id}, ${o.first_product_id}, ${o.first_price})">✏️ Tahrirlash</button>
+          <button class="btn btn-danger btn-sm" onclick="doDeleteOrder(${o.id})">🗑 O'chirish</button>
+        </div>
+      </div>`;
+    });
+    el.innerHTML = html;
+  } catch(e) {
+    document.getElementById('pageOrders').innerHTML = renderAlert('error', e.message);
+  }
+}
+
+function startEditOrder(orderId, productId, price) {
+  selectedOrder = { id: orderId, productId: productId, price: price };
+  openQtyModal('Tahrirlash', async (qty) => {
+    try {
+      const result = await apiCall('PATCH', `/orders/${orderId}`, { product_id: productId, price: price, qty: parseFloat(qty) });
+      alert(`Buyurtma yangilandi!\nYangi jami: ${formatNum(result.total)} UZS`);
+      loadOrders();
+    } catch(e) { alert('Xatolik: ' + e.message); }
+  });
+}
+
+async function doDeleteOrder(orderId) {
+  if (!confirm('Buyurtmani o\'chirishni xohlaysizmi?')) return;
+  try {
+    await apiCall('DELETE', `/orders/${orderId}`);
+    loadOrders();
+  } catch(e) { alert('Xatolik: ' + e.message); }
+}
+
+// --- Akt Sverka ---
+async function loadAktSverka(months) {
+  renderLoader('Akt');
+  const m = months || 1;
+  try {
+    const data = await apiCall('GET', `/akt-sverka?months=${m}`);
+    const el = document.getElementById('pageAkt');
+    let html = `<h3 style="margin-bottom:12px">📊 Akt sverka</h3>
+      <div class="tabs">
+        <button class="${m === 1 ? 'active' : ''}" onclick="loadAktSverka(1)">1 oylik</button>
+        <button class="${m === 2 ? 'active' : ''}" onclick="loadAktSverka(2)">2 oylik</button>
+        <button class="${m === 3 ? 'active' : ''}" onclick="loadAktSverka(3)">3 oylik</button>
+      </div>`;
+    if (!data.documents || data.documents.length === 0) {
+      html += '<div class="empty">Operatsiyalar mavjud emas</div>';
+    }
+    data.documents.forEach(d => {
+      let detailsHtml = d.details.map(det => `<div class="akt-detail">▫️ ${det.name} — ${det.qty} ta (${formatNum(det.summa)} UZS)</div>`).join('');
+      html += `<div class="akt-card">
+        <div class="akt-header"><span class="akt-type">📄 ${d.direction}</span><span>#${d.id} | ${d.date}</span></div>
+        <div class="akt-detail">▪️ Summa: ${formatNum(d.debt || d.credit)} UZS</div>
+        <div class="akt-detail">▪️ Balans: ${formatNum(d.balance)} UZS</div>
+        ${detailsHtml}
+      </div>`;
+    });
+    el.innerHTML = html;
+  } catch(e) {
+    document.getElementById('pageAkt').innerHTML = renderAlert('error', e.message);
+  }
+}
+
+// --- Quantity Modal ---
+function openQtyModal(action, callback) {
+  document.getElementById('qtyModalTitle').textContent = `${action} - miqdor kiriting`;
+  document.getElementById('qtyInput').value = '';
+  document.getElementById('qtyModal').classList.add('show');
+  qtyCallback = callback;
+  document.getElementById('qtyInput').focus();
+}
+function closeQtyModal() {
+  document.getElementById('qtyModal').classList.remove('show');
+  qtyCallback = null;
+}
+document.getElementById('qtyConfirmBtn').addEventListener('click', () => {
+  const qty = document.getElementById('qtyInput').value.trim().replace(',', '.');
+  if (!qty || isNaN(qty) || parseFloat(qty) <= 0) {
+    alert('Iltimos, musbat miqdor kiriting');
+    return;
+  }
+  closeQtyModal();
+  if (qtyCallback) qtyCallback(qty);
+});
+
+// --- Init ---
+async function init() {
+  try {
+    const userData = await apiCall('GET', '/user');
+    currentUser = userData;
+    setHeader(userData.company_name, userData.client_id);
+
+    if (userData.registered) {
+      showPage('profile');
+    } else {
+      showPage('register');
+    }
+  } catch(e) {
+    document.getElementById('app').innerHTML = `
+      <div style="display:flex;align-items:center;justify-content:center;height:100vh;flex-direction:column;gap:12px">
+        <p style="font-size:16px;color:var(--tg-hint)">Xatolik yuz berdi</p>
+        <p style="font-size:14px;color:var(--tg-destructive)">${e.message}</p>
+        <p style="font-size:13px;color:var(--tg-hint)">Iltimos, bot orqali /start buyrug'ini yuboring va qayta urinib ko'ring.</p>
+      </div>
+    `;
+    document.getElementById('bottomNav').style.display = 'none';
+  }
+}
+
+init();
+</script>
+</body>
+</html>
