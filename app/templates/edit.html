@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}Tahrirlash: {{ bot.name }}{% endblock %}
+{% block content %}
+<a href="/panel" class="back-link">&larr; Orqaga</a>
+<h1>{{ bot.name }}</h1>
+
+<div class="card" style="max-width: 560px;">
+    <form method="post">
+        <div class="form-group">
+            <label for="name">Bot nomi</label>
+            <input type="text" id="name" name="name" required value="{{ bot.name }}" autofocus>
+        </div>
+        <div class="form-group">
+            <label for="token">Bot tokeni</label>
+            <input type="text" id="token" name="token" required value="{{ bot.token }}">
+        </div>
+        <div class="form-group">
+            <label for="company_name">Kompaniya nomi</label>
+            <input type="text" id="company_name" name="company_name" value="{{ bot.company_name or '' }}">
+        </div>
+        <div class="form-group">
+            <label for="base_url">Base URL</label>
+            <input type="text" id="base_url" name="base_url" value="{{ bot.base_url or '' }}">
+        </div>
+        <div class="form-group">
+            <label for="one_c_login">1C login</label>
+            <input type="text" id="one_c_login" name="one_c_login" value="{{ bot.one_c_login or '' }}">
+        </div>
+        <div class="form-group">
+            <label for="one_c_password">1C parol</label>
+            <input type="password" id="one_c_password" name="one_c_password" value="{{ bot.one_c_password or '' }}">
+        </div>
+        <div class="form-group checkbox-group">
+            <input type="checkbox" id="is_active" name="is_active" value="true" {% if bot.is_active %}checked{% endif %}>
+            <input type="hidden" name="is_active" value="false">
+            <label for="is_active">Aktiv</label>
+        </div>
+        <button type="submit" class="btn btn-primary">Saqlash</button>
+    </form>
+</div>
+{% endblock %}

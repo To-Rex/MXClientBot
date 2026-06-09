@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block title %}{{ bot.name }} &mdash; Statistika{% endblock %}
+{% block content %}
+<a href="/panel" class="back-link">&larr; Orqaga</a>
+<h1>{{ bot.name }}</h1>
+
+<div class="stats-grid">
+    <div class="stat-card accent">
+        <span class="stat-value">{{ total_users }}</span>
+        <span class="stat-label">Jami foydalanuvchilar</span>
+    </div>
+    <div class="stat-card {% if is_running %}success{% else %}accent{% endif %}">
+        <span class="stat-value">{% if is_running %}&#9673;{% else %}&#9678;{% endif %}</span>
+        <span class="stat-label">{% if is_running %}Ishlayapti{% else %}To'xtatilgan{% endif %}</span>
+    </div>
+</div>
+
+<h2>Bot haqida</h2>
+<div class="card">
+    <table class="info-table">
+        <tr><td>ID</td><td><strong>{{ bot.id }}</strong></td></tr>
+        <tr><td>Nomi</td><td><strong>{{ bot.name }}</strong></td></tr>
+        <tr><td>Kompaniya</td><td>{{ bot.company_name or '&mdash;'|safe }}</td></tr>
+        <tr><td>Base URL</td><td style="font-family:monospace;font-size:13px">{{ bot.base_url or '&mdash;'|safe }}</td></tr>
+        <tr><td>Token</td><td style="font-family:monospace;font-size:12px;color:var(--text-muted)">{{ bot.token[:20] }}&hellip;</td></tr>
+        <tr><td>Yaratilgan</td><td>{{ bot.created_at.strftime('%Y-%m-%d %H:%M') if bot.created_at else '&mdash;'|safe }}</td></tr>
+        <tr><td>Yangilangan</td><td>{{ bot.updated_at.strftime('%Y-%m-%d %H:%M') if bot.updated_at else '&mdash;'|safe }}</td></tr>
+    </table>
+</div>
+
+{% if recent_users %}
+<h2>Oxirgi foydalanuvchilar</h2>
+<div class="table-wrap">
+<table>
+    <thead>
+        <tr>
+            <th>Telegram ID</th>
+            <th>Telefon</th>
+            <th>Client ID</th>
+            <th>Sana</th>
+        </tr>
+    </thead>
+    <tbody>
+    {% for user in recent_users %}
+        <tr>
+            <td><strong>{{ user.telegram_id }}</strong></td>
+            <td>{{ user.phone_number or '&mdash;'|safe }}</td>
+            <td style="font-family:monospace;font-size:13px">{{ user.client_id or '&mdash;'|safe }}</td>
+            <td>{{ user.created_at.strftime('%Y-%m-%d %H:%M') if user.created_at else '&mdash;'|safe }}</td>
+        </tr>
+    {% endfor %}
+    </tbody>
+</table>
+</div>
+{% endif %}
+{% endblock %}

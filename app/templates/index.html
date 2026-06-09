@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block title %}Botlar ro'yxati{% endblock %}
+{% block content %}
+<div class="header-row">
+    <h1>Botlar</h1>
+    <a href="/panel/bots/create" class="btn btn-primary">+ Yangi bot</a>
+</div>
+
+{% if bots %}
+<div class="table-wrap">
+<table>
+    <thead>
+        <tr>
+            <th>Nomi</th>
+            <th>Kompaniya</th>
+            <th>Foydalanuvchilar</th>
+            <th>Holati</th>
+            <th></th>
+        </tr>
+    </thead>
+    <tbody>
+    {% for bot in bots %}
+        <tr>
+            <td>
+                <strong>{{ bot.name }}</strong>
+                <div class="company-name">ID: {{ bot.id }}</div>
+            </td>
+            <td>{{ bot.company_name or '<span class="company-name">&mdash;</span>'|safe }}</td>
+            <td><span class="user-count">{{ user_counts.get(bot.id, 0) }}</span></td>
+            <td>
+                {% if bot.is_active %}
+                    <span class="badge badge-active">Aktiv</span>
+                {% else %}
+                    <span class="badge badge-inactive">Noaktiv</span>
+                {% endif %}
+            </td>
+            <td>
+                <div class="actions">
+                    <a href="/panel/bots/{{ bot.id }}/stats" class="btn btn-sm btn-ghost">Statistika</a>
+                    <a href="/panel/bots/{{ bot.id }}/edit" class="btn btn-sm btn-ghost">Tahrirlash</a>
+                    <form method="post" action="/panel/bots/{{ bot.id }}/toggle" style="display:inline">
+                        {% if bot.is_active %}
+                            <button class="btn btn-sm btn-warning">Deaktiv</button>
+                        {% else %}
+                            <button class="btn btn-sm btn-success">Aktiv</button>
+                        {% endif %}
+                    </form>
+                    <form method="post" action="/panel/bots/{{ bot.id }}/delete" style="display:inline" onsubmit="return confirm('Rostdan ham o\'chirmoqchimisiz?')">
+                        <button class="btn btn-sm btn-danger">O'chirish</button>
+                    </form>
+                </div>
+            </td>
+        </tr>
+    {% endfor %}
+    </tbody>
+</table>
+</div>
+{% else %}
+<div class="card">
+    <div class="empty-state">
+        <div class="empty-icon">&#9883;</div>
+        <p>Hozircha hech qanday bot yo'q. Yangi bot qo'shish uchun "Yangi bot" tugmasini bosing.</p>
+        <a href="/panel/bots/create" class="btn btn-primary">+ Yangi bot qo'shish</a>
+    </div>
+</div>
+{% endif %}
+{% endblock %}

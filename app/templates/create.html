@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}Yangi bot qo'shish{% endblock %}
+{% block content %}
+<a href="/panel" class="back-link">&larr; Orqaga</a>
+<h1>Yangi bot qo'shish</h1>
+
+<div class="card" style="max-width: 560px;">
+    <form method="post">
+        <div class="form-group">
+            <label for="name">Bot nomi</label>
+            <input type="text" id="name" name="name" required placeholder="Masalan: Mijozlar Boti" autofocus>
+        </div>
+        <div class="form-group">
+            <label for="token">Bot tokeni</label>
+            <input type="text" id="token" name="token" required placeholder="1234567890:ABCdefGHIjklMNOpqrsTUVwxyz">
+            <div class="form-hint">@BotFather orqali olingan token</div>
+        </div>
+        <div class="form-group">
+            <label for="company_name">Kompaniya nomi</label>
+            <input type="text" id="company_name" name="company_name" placeholder="Kompaniya nomi">
+        </div>
+        <div class="form-group">
+            <label for="base_url">Base URL</label>
+            <input type="text" id="base_url" name="base_url" placeholder="https://api.example.com">
+        </div>
+        <div class="form-group">
+            <label for="one_c_login">1C login</label>
+            <input type="text" id="one_c_login" name="one_c_login" placeholder="login">
+        </div>
+        <div class="form-group">
+            <label for="one_c_password">1C parol</label>
+            <input type="password" id="one_c_password" name="one_c_password" placeholder="parol">
+        </div>
+        <div class="form-group checkbox-group">
+            <input type="checkbox" id="is_active" name="is_active" value="true" checked>
+            <input type="hidden" name="is_active" value="false">
+            <label for="is_active">Aktiv holatda yaratish</label>
+        </div>
+        <button type="submit" class="btn btn-primary">Botni yaratish</button>
+    </form>
+</div>
+{% endblock %}

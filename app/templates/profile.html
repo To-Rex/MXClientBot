@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}Profil{% endblock %}
+{% block content %}
+<a href="/panel" class="back-link">&larr; Orqaga</a>
+<h1>Profil</h1>
+
+<div class="card" style="max-width: 600px;">
+    <table class="info-table">
+        <tr><td>ID</td><td><strong>{{ profile.get('id', '&mdash;') }}</strong></td></tr>
+        <tr><td>Username</td><td><strong>{{ profile.get('username', '&mdash;') }}</strong></td></tr>
+        <tr><td>Email</td><td>{{ profile.get('email', '&mdash;') }}</td></tr>
+        <tr><td>Ism</td><td>{{ profile.get('first_name', '&mdash;') }}</td></tr>
+        <tr><td>Familiya</td><td>{{ profile.get('last_name') or '&mdash;' }}</td></tr>
+        <tr><td>Telefon</td><td>{{ profile.get('phone_number') or '&mdash;' }}</td></tr>
+        <tr><td>Foydalanuvchi turi</td><td>
+            {% set utype = profile.get('user_type', '') %}
+            {% if utype == 'SUPERADMIN' %}
+                <span class="badge badge-active">Super Admin</span>
+            {% elif utype == 'ADMIN' %}
+                <span class="badge badge-active">Admin</span>
+            {% else %}
+                <span class="badge badge-inactive">{{ utype or '&mdash;' }}</span>
+            {% endif %}
+        </td></tr>
+        <tr><td>Status</td><td>
+            {% if profile.get('user_status') == 'ACTIVE' %}
+                <span class="badge badge-active">Aktiv</span>
+            {% else %}
+                <span class="badge badge-inactive">{{ profile.get('user_status', '&mdash;') }}</span>
+            {% endif %}
+        </td></tr>
+        <tr><td>1C Login</td><td>{{ profile.get('user_1c_login') or '&mdash;' }}</td></tr>
+        <tr><td>Ro'yxatdan o'tgan</td><td>{{ profile.get('created_at', '&mdash;')[:19] }}</td></tr>
+    </table>
+</div>
+{% endblock %}
