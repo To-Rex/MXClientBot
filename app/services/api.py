@@ -178,6 +178,57 @@ class APIService:
                 return None
 
     @staticmethod
+    async def create_bulk_order(
+        base_url: str, login: str, password: str,
+        client_id: int, products: list[dict],
+    ) -> Optional[dict]:
+        url = f"{base_url.rstrip('/')}/hs/client/api/CreateOrder"
+        credentials = base64.b64encode(f"{login}:{password}".encode()).decode()
+        headers = {
+            "Authorization": f"Basic {credentials}",
+            "Content-Type": "application/json",
+        }
+        items = []
+        for p in products:
+            price = float(p["price"])
+            qty = float(p["qty"])
+            items.append({
+                "product_id": int(p["product_id"]),
+                "price": price,
+                "qty": qty,
+                "sum": price * qty,
+            })
+        payload = {
+            "client_id": client_id,
+            "products": items,
+        }
+
+        logger.info(
+            "📡 create_bulk_order REQUEST\n   URL: %s\n   Body: %s",
+            url, payload,
+        )
+
+        async with httpx.AsyncClient(timeout=30) as client:
+            try:
+                response = await client.post(url, json=payload, headers=headers)
+                logger.info(
+                    "📡 create_bulk_order RESPONSE\n   Status: %s %s\n   Body: %s",
+                    response.status_code, response.reason_phrase, response.text[:500],
+                )
+                response.raise_for_status()
+                return response.json()
+            except httpx.HTTPStatusError as e:
+                logger.error(
+                    "❌ create_bulk_order FAILED\n   Status: %s\n   Response: %s",
+                    e.response.status_code, e.response.text[:500],
+                )
+                try: return e.response.json()
+                except Exception: return None
+            except Exception as e:
+                logger.error("❌ create_bulk_order EXCEPTION for %s: %s", url, e)
+                return None
+
+    @staticmethod
     async def get_orders(
         base_url: str, login: str, password: str, client_id: str
     ) -> Optional[dict]:

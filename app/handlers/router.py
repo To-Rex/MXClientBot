@@ -31,6 +31,41 @@ logger = logging.getLogger(__name__)
 _product_msg_ids: dict[int, list[int]] = {}
 # Track akt sverka messages per chat to delete when switching periods
 _akt_msg_ids: dict[int, list[int]] = {}
+# In-memory cart storage: {(bot_id, telegram_id): {product_id: {name, price, qty}}}
+_carts: dict[tuple[int, int], dict[int, dict]] = {}
+
+
+def _main_menu_keyboard() -> ReplyKeyboardMarkup:
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="👤 Profil"), KeyboardButton(text="ℹ️ Info")],
+            [KeyboardButton(text="📦 Mahsulotlar"), KeyboardButton(text="📋 Buyurtmalar")],
+            [KeyboardButton(text="💰 Balans"), KeyboardButton(text="📊 Akt sverka")],
+            [KeyboardButton(text="🛒 Savat"), KeyboardButton(text="✍️ Shikoyat")],
+        ],
+        resize_keyboard=True,
+    )
+
+
+def _cart_key(bot_id: int, telegram_id: int) -> tuple[int, int]:
+    return (bot_id, telegram_id)
+
+
+def _get_cart(bot_id: int, telegram_id: int) -> dict[int, dict]:
+    return _carts.setdefault(_cart_key(bot_id, telegram_id), {})
+
+
+def _cart_count(bot_id: int, telegram_id: int) -> int:
+    return len(_carts.get(_cart_key(bot_id, telegram_id), {}))
+
+
+def _cart_total(bot_id: int, telegram_id: int) -> float:
+    cart = _carts.get(_cart_key(bot_id, telegram_id), {})
+    return sum(it["price"] * it["qty"] for it in cart.values())
+
+
+def _cart_clear(bot_id: int, telegram_id: int) -> None:
+    _carts.pop(_cart_key(bot_id, telegram_id), None)
 
 PROFILE_FIELD_LABELS = {
     "name": "Ism",
@@ -54,6 +89,9 @@ class EditOrderState(StatesGroup):
 
 class OrderState(StatesGroup):
     waiting_qty = State()
+
+class CartState(StatesGroup):
+    waiting_cart_qty = State()
 
 class ComplaintState(StatesGroup):
     waiting_note = State()
@@ -152,20 +190,11 @@ def create_router(
         user = await _get_user(session_factory, message.from_user.id, bot_config["id"])
 
         if user and user.client_id:
-            keyboard = ReplyKeyboardMarkup(
-                keyboard=[
-                    [KeyboardButton(text="👤 Profil"), KeyboardButton(text="ℹ️ Info")],
-                    [KeyboardButton(text="📦 Mahsulotlar"), KeyboardButton(text="📋 Buyurtmalar")],
-                    [KeyboardButton(text="💰 Balans"), KeyboardButton(text="📊 Akt sverka")],
-                    [KeyboardButton(text="✍️ Shikoyat")],
-                ],
-                resize_keyboard=True,
-            )
             company = bot_config["company_name"]
             await message.answer(
                 f"Assalomu alaykum! {company} botiga xush kelibsiz.\n\n"
                 "Menyudan kerakli bo'limni tanlang:",
-                reply_markup=keyboard,
+                reply_markup=_main_menu_keyboard(),
             )
             return
 
@@ -252,18 +281,9 @@ def create_router(
                 client_id,
             )
 
-            keyboard = ReplyKeyboardMarkup(
-                keyboard=[
-                    [KeyboardButton(text="👤 Profil"), KeyboardButton(text="ℹ️ Info")],
-                    [KeyboardButton(text="📦 Mahsulotlar"), KeyboardButton(text="📋 Buyurtmalar")],
-                    [KeyboardButton(text="💰 Balans"), KeyboardButton(text="📊 Akt sverka")],
-                    [KeyboardButton(text="✍️ Shikoyat")],
-                ],
-                resize_keyboard=True,
-            )
             await message.answer(
                 "✅ Ro'yxatdan muvaffaqiyatli o'tdingiz!",
-                reply_markup=keyboard,
+                reply_markup=_main_menu_keyboard(),
             )
         else:
             await message.answer(
@@ -384,7 +404,11 @@ def create_router(
                 text="🛒 Buyurtma berish",
                 callback_data=f"order_{product_id}_{price_val}",
             )
-            keyboard = InlineKeyboardMarkup(inline_keyboard=[[order_btn]])
+            cart_btn = InlineKeyboardButton(
+                text="➕ Savatga qo'shish",
+                callback_data=f"cadd_{product_id}_{price_val}",
+            )
+            keyboard = InlineKeyboardMarkup(inline_keyboard=[[order_btn], [cart_btn]])
 
             images = product.get("img", [])
             if images:
@@ -495,15 +519,7 @@ def create_router(
     @router.message(OrderState.waiting_qty, F.text == "❌ Bekor qilish")
     async def cancel_order_qty(message: Message, state: FSMContext):
         await state.clear()
-        await message.answer("❌ Buyurtma bekor qilindi.", reply_markup=ReplyKeyboardMarkup(
-            keyboard=[
-                [KeyboardButton(text="👤 Profil"), KeyboardButton(text="ℹ️ Info")],
-                [KeyboardButton(text="📦 Mahsulotlar"), KeyboardButton(text="📋 Buyurtmalar")],
-                [KeyboardButton(text="💰 Balans"), KeyboardButton(text="📊 Akt sverka")],
-                [KeyboardButton(text="✍️ Shikoyat")],
-            ],
-            resize_keyboard=True,
-        ))
+        await message.answer("❌ Buyurtma bekor qilindi.", reply_markup=_main_menu_keyboard())
 
     @router.message(OrderState.waiting_qty)
     async def process_qty(message: Message, state: FSMContext):
@@ -542,19 +558,304 @@ def create_router(
                 f"▪️ Buyurtma ID: {order_id}\n"
                 f"▪️ Miqdor: {qty:g} ta\n"
                 f"▪️ Jami: {total:,.0f} UZS".replace(",", " "),
-                reply_markup=ReplyKeyboardMarkup(
-                    keyboard=[
-                        [KeyboardButton(text="👤 Profil"), KeyboardButton(text="ℹ️ Info")],
-                    [KeyboardButton(text="📦 Mahsulotlar"), KeyboardButton(text="📋 Buyurtmalar")],
-                    [KeyboardButton(text="💰 Balans"), KeyboardButton(text="📊 Akt sverka")],
-                    [KeyboardButton(text="✍️ Shikoyat")],
-                    ],
-                    resize_keyboard=True,
-                ),
+                reply_markup=_main_menu_keyboard(),
             )
         else:
             error = (result or {}).get("error") or (result or {}).get("message", "Noma'lum xatolik")
             await message.answer(f"❌ Buyurtma yuborilmadi: {error}")
+
+    def _format_cart_text(telegram_id: int) -> str:
+        cart = _get_cart(bot_config["id"], telegram_id)
+        if not cart:
+            return "🛒 <b>Savat bo'sh</b>\n\nMahsulotlar bo'limidan tovar qo'shing."
+        lines = ["🛒 <b>Savat</b>\n"]
+        total = 0.0
+        for idx, (pid, item) in enumerate(cart.items(), 1):
+            item_sum = item["price"] * item["qty"]
+            total += item_sum
+            qty_str = f"{item['qty']:g}"
+            lines.append(
+                f"<b>{idx}.</b> {item['name']}\n"
+                f"   {qty_str} ta × {item['price']:,.0f} = "
+                f"{item_sum:,.0f} UZS".replace(",", " ")
+            )
+        lines.append("")
+        lines.append(f"━━━━━━━━━━━━━━")
+        lines.append(f"<b>Jami: {total:,.0f} UZS</b>".replace(",", " "))
+        return "\n".join(lines)
+
+    def _build_cart_keyboard(telegram_id: int) -> Optional[InlineKeyboardMarkup]:
+        cart = _get_cart(bot_config["id"], telegram_id)
+        if not cart:
+            return None
+        rows = []
+        for pid, item in cart.items():
+            name_short = item["name"]
+            if len(name_short) > 22:
+                name_short = name_short[:21] + "…"
+            qty_str = f"{item['qty']:g}"
+            rows.append([
+                InlineKeyboardButton(
+                    text=f"✏️ {name_short} ({qty_str} ta)",
+                    callback_data=f"cqty_{pid}",
+                ),
+                InlineKeyboardButton(
+                    text="🗑",
+                    callback_data=f"crm_{pid}",
+                ),
+            ])
+        rows.append([
+            InlineKeyboardButton(text="🧹 Tozalash", callback_data="cclear"),
+            InlineKeyboardButton(text="✅ Buyurtma berish", callback_data="csubmit"),
+        ])
+        return InlineKeyboardMarkup(inline_keyboard=rows)
+
+    @router.callback_query(F.data.startswith("cadd_"))
+    async def cart_add_callback(callback: CallbackQuery, state: FSMContext):
+        user = await _get_user(session_factory, callback.from_user.id, bot_config["id"])
+        if not user or not user.client_id:
+            await callback.answer("❌ Avval ro'yxatdan o'ting. /start", show_alert=True)
+            return
+
+        try:
+            _, product_id, price = callback.data.split("_", 2)
+            product_id = int(product_id)
+            price = float(price)
+        except (ValueError, IndexError):
+            await callback.answer("❌ Xatolik yuz berdi.", show_alert=True)
+            return
+
+        import re
+        caption = callback.message.html_text or ""
+        match = re.search(r"<b>(.+?)</b>", caption)
+        product_name = match.group(1) if match else "Mahsulot"
+
+        cart = _get_cart(bot_config["id"], callback.from_user.id)
+        existing_qty = cart.get(product_id, {}).get("qty", 0)
+
+        await state.update_data(
+            cart_pid=product_id,
+            cart_price=price,
+            cart_name=product_name,
+            cart_mode="add",
+        )
+        await state.set_state(CartState.waiting_cart_qty)
+
+        keyboard = ReplyKeyboardMarkup(
+            keyboard=[[KeyboardButton(text="❌ Bekor qilish")]],
+            resize_keyboard=True,
+            one_time_keyboard=True,
+        )
+        await callback.answer()
+        extra = ""
+        if existing_qty:
+            extra = f"\n<i>Savatda hozir: {existing_qty:g} ta (yangi miqdor ustiga qo'shiladi)</i>"
+        await callback.message.answer(
+            f"➕ <b>Savatga qo'shish</b>\n\n"
+            f"Mahsulot: <b>{product_name}</b>\n"
+            f"Narx: {price:,.0f} UZS{extra}\n\n"
+            "Nechta qo'shishni raqamda yuboring.".replace(",", " "),
+            reply_markup=keyboard,
+        )
+
+    @router.callback_query(F.data.startswith("cqty_"))
+    async def cart_qty_edit_callback(callback: CallbackQuery, state: FSMContext):
+        try:
+            pid = int(callback.data.split("_", 1)[1])
+        except (ValueError, IndexError):
+            await callback.answer("❌ Xatolik yuz berdi.", show_alert=True)
+            return
+
+        cart = _get_cart(bot_config["id"], callback.from_user.id)
+        item = cart.get(pid)
+        if not item:
+            await callback.answer("❌ Mahsulot savatda topilmadi.", show_alert=True)
+            return
+
+        await state.update_data(
+            cart_pid=pid,
+            cart_price=item["price"],
+            cart_name=item["name"],
+            cart_mode="edit",
+        )
+        await state.set_state(CartState.waiting_cart_qty)
+
+        keyboard = ReplyKeyboardMarkup(
+            keyboard=[[KeyboardButton(text="❌ Bekor qilish")]],
+            resize_keyboard=True,
+            one_time_keyboard=True,
+        )
+        await callback.answer()
+        await callback.message.answer(
+            f"✏️ <b>Miqdorni o'zgartirish</b>\n\n"
+            f"Mahsulot: <b>{item['name']}</b>\n"
+            f"Joriy miqdor: {item['qty']:g} ta\n\n"
+            "Yangi miqdorni raqamda yuboring.",
+            reply_markup=keyboard,
+        )
+
+    @router.message(CartState.waiting_cart_qty, F.text == "❌ Bekor qilish")
+    async def cancel_cart_qty(message: Message, state: FSMContext):
+        await state.clear()
+        await message.answer("❌ Bekor qilindi.", reply_markup=_main_menu_keyboard())
+
+    @router.message(CartState.waiting_cart_qty)
+    async def process_cart_qty(message: Message, state: FSMContext):
+        try:
+            qty = float(message.text.strip().replace(",", "."))
+            if qty <= 0:
+                raise ValueError
+        except ValueError:
+            await message.answer("❌ Iltimos, musbat raqam yuboring. Masalan: 3")
+            return
+
+        data = await state.get_data()
+        pid = data["cart_pid"]
+        price = data["cart_price"]
+        name = data.get("cart_name", "Mahsulot")
+        mode = data.get("cart_mode", "add")
+        await state.clear()
+
+        cart = _get_cart(bot_config["id"], message.from_user.id)
+        if mode == "edit":
+            if pid in cart:
+                cart[pid]["qty"] = qty
+                cart[pid]["price"] = price
+                cart[pid]["name"] = name
+            else:
+                cart[pid] = {"name": name, "price": price, "qty": qty}
+            action_text = "✏️ Miqdor yangilandi"
+        else:
+            if pid in cart:
+                cart[pid]["qty"] = cart[pid]["qty"] + qty
+                cart[pid]["price"] = price
+                cart[pid]["name"] = name
+            else:
+                cart[pid] = {"name": name, "price": price, "qty": qty}
+            action_text = "✅ Savatga qo'shildi"
+
+        total_count = _cart_count(bot_config["id"], message.from_user.id)
+        cart_total = _cart_total(bot_config["id"], message.from_user.id)
+        new_qty = cart[pid]["qty"]
+
+        await message.answer(
+            f"{action_text}\n\n"
+            f"▪️ {name}\n"
+            f"▪️ Miqdor: {new_qty:g} ta\n"
+            f"▪️ Narx: {price:,.0f} UZS\n\n"
+            f"<b>Savatda: {total_count} ta tovar | "
+            f"{cart_total:,.0f} UZS</b>\n\n".replace(",", " ")
+            + "Buyurtma berish uchun «🛒 Savat» menyusiga o'ting.",
+            reply_markup=_main_menu_keyboard(),
+        )
+
+    @router.message(F.text == "🛒 Savat")
+    async def cart_handler(message: Message):
+        user = await _get_user(session_factory, message.from_user.id, bot_config["id"])
+        if not user or not user.client_id:
+            await message.answer(
+                "❌ Avval ro'yxatdan o'tishingiz kerak. Iltimos, /start buyrug'ini bosing."
+            )
+            return
+
+        text = _format_cart_text(message.from_user.id)
+        kb = _build_cart_keyboard(message.from_user.id)
+        await message.answer(text, reply_markup=kb)
+
+    @router.callback_query(F.data.startswith("crm_"))
+    async def cart_remove_callback(callback: CallbackQuery):
+        try:
+            pid = int(callback.data.split("_", 1)[1])
+        except (ValueError, IndexError):
+            await callback.answer("❌ Xatolik yuz berdi.", show_alert=True)
+            return
+
+        cart = _get_cart(bot_config["id"], callback.from_user.id)
+        item = cart.pop(pid, None)
+        if not item:
+            await callback.answer("❌ Mahsulot savatda topilmadi.", show_alert=True)
+            return
+
+        await callback.answer(f"🗑 {item['name']} olib tashlandi")
+        text = _format_cart_text(callback.from_user.id)
+        kb = _build_cart_keyboard(callback.from_user.id)
+        try:
+            await callback.message.edit_text(text, reply_markup=kb)
+        except Exception:
+            await callback.message.answer(text, reply_markup=kb)
+
+    @router.callback_query(F.data == "cclear")
+    async def cart_clear_callback(callback: CallbackQuery):
+        cart = _get_cart(bot_config["id"], callback.from_user.id)
+        if not cart:
+            await callback.answer("Savat allaqachon bo'sh", show_alert=True)
+            return
+        _cart_clear(bot_config["id"], callback.from_user.id)
+        await callback.answer("🧹 Savat tozalandi")
+        try:
+            await callback.message.edit_text(
+                "🛒 <b>Savat bo'sh</b>\n\nMahsulotlar bo'limidan tovar qo'shing.",
+            )
+        except Exception:
+            await callback.message.answer(
+                "🛒 <b>Savat bo'sh</b>\n\nMahsulotlar bo'limidan tovar qo'shing.",
+            )
+
+    @router.callback_query(F.data == "csubmit")
+    async def cart_submit_callback(callback: CallbackQuery):
+        user = await _get_user(session_factory, callback.from_user.id, bot_config["id"])
+        if not user or not user.client_id:
+            await callback.answer("❌ Avval ro'yxatdan o'ting. /start", show_alert=True)
+            return
+
+        cart = _get_cart(bot_config["id"], callback.from_user.id)
+        if not cart:
+            await callback.answer("Savat bo'sh", show_alert=True)
+            return
+
+        await callback.answer("⏳ Buyurtma yuborilmoqda...")
+
+        products = [
+            {
+                "product_id": pid,
+                "price": item["price"],
+                "qty": item["qty"],
+            }
+            for pid, item in cart.items()
+        ]
+
+        result = await api_service.create_bulk_order(
+            bot_config["base_url"],
+            bot_config["one_c_login"],
+            bot_config["one_c_password"],
+            client_id=int(user.client_id),
+            products=products,
+        )
+
+        if result and not result.get("error"):
+            order_id = result.get("id", "?")
+            total = sum(it["price"] * it["qty"] for it in cart.values())
+            items_summary_lines = []
+            for pid, item in cart.items():
+                items_summary_lines.append(
+                    f"  ▪️ {item['name']} — {item['qty']:g} ta × "
+                    f"{item['price']:,.0f} = {item['price']*item['qty']:,.0f} UZS".replace(",", " ")
+                )
+            _cart_clear(bot_config["id"], callback.from_user.id)
+            success_text = (
+                f"✅ <b>Buyurtma qabul qilindi!</b>\n"
+                f"▪️ Buyurtma ID: {order_id}\n"
+                f"▪️ Mahsulotlar: {len(products)} xil\n"
+                + "\n".join(items_summary_lines) + "\n\n"
+                f"<b>Jami: {total:,.0f} UZS</b>".replace(",", " ")
+            )
+            try:
+                await callback.message.edit_text(success_text)
+            except Exception:
+                await callback.message.answer(success_text)
+        else:
+            error = (result or {}).get("error") or (result or {}).get("message", "Noma'lum xatolik")
+            await callback.message.answer(f"❌ Buyurtma yuborilmadi: {error}")
 
     @router.message(F.text == "📋 Buyurtmalar")
     async def orders_handler(message: Message):
@@ -583,9 +884,6 @@ def create_router(
             total_qty = order.get("qty", 0)
             total_sum = order.get("summa", 0)
             goods = order.get("list_goods", [])
-            first_item = goods[0] if goods else {}
-            item_price = first_item.get("summa", 0) / max(first_item.get("qty", 1), 1)
-            item_product_id = first_item.get("id", 0)
 
             lines = [
                 f"<b>📋 Buyurtma #{order_id}</b>",
@@ -604,7 +902,7 @@ def create_router(
             keyboard = InlineKeyboardMarkup(inline_keyboard=[[
                 InlineKeyboardButton(
                     text="✏️ Tahrirlash",
-                    callback_data=f"edit_{order_id}_{item_product_id}_{item_price}",
+                    callback_data=f"edit_{order_id}",
                 ),
                 InlineKeyboardButton(
                     text="🗑 O'chirish",
@@ -614,21 +912,55 @@ def create_router(
 
             await message.answer("\n".join(lines), reply_markup=keyboard)
 
-    @router.callback_query(F.data.startswith("edit_"))
-    async def edit_order_callback(callback: CallbackQuery, state: FSMContext):
+    async def _fetch_order(client_id: str, order_id: int) -> Optional[dict]:
+        data = await api_service.get_orders(
+            bot_config["base_url"],
+            bot_config["one_c_login"],
+            bot_config["one_c_password"],
+            client_id,
+        )
+        if not data:
+            return None
+        for o in data.get("data", []):
+            try:
+                if int(o.get("id")) == int(order_id):
+                    return o
+            except (TypeError, ValueError):
+                continue
+        return None
+
+    def _item_unit_price(item: dict) -> float:
+        qty = item.get("qty", 0) or 0
+        summa = item.get("summa", 0) or 0
         try:
-            _, order_id, product_id, price = callback.data.split("_", 3)
-            order_id = int(order_id)
-            product_id = int(product_id)
-            price = float(price)
-        except (ValueError, IndexError):
-            await callback.answer("❌ Xatolik yuz berdi.", show_alert=True)
-            return
+            qty_f = float(qty)
+        except (TypeError, ValueError):
+            qty_f = 0.0
+        try:
+            summa_f = float(summa)
+        except (TypeError, ValueError):
+            summa_f = 0.0
+        if qty_f <= 0:
+            return 0.0
+        return summa_f / qty_f
+
+    async def _ask_edit_qty(
+        message_or_callback,
+        state: FSMContext,
+        order_id: int,
+        item: dict,
+    ):
+        pid = int(item.get("id"))
+        name = item.get("name", "Mahsulot")
+        cur_qty = item.get("qty", 0)
+        unit_price = _item_unit_price(item)
 
         await state.update_data(
             edit_order_id=order_id,
-            edit_product_id=product_id,
-            edit_price=price,
+            edit_product_id=pid,
+            edit_price=unit_price,
+            edit_product_name=name,
+            edit_current_qty=cur_qty,
         )
         await state.set_state(EditOrderState.waiting_edit_qty)
 
@@ -637,25 +969,105 @@ def create_router(
             resize_keyboard=True,
             one_time_keyboard=True,
         )
-        await callback.answer()
-        await callback.message.answer(
-            "✏️ <b>Yangi miqdor kiriting:</b>\n\n"
-            "Iltimos, yangi miqdorni raqamda yuboring.",
-            reply_markup=keyboard,
+        text = (
+            f"✏️ <b>Yangi miqdor kiriting</b>\n\n"
+            f"Buyurtma: #{order_id}\n"
+            f"Mahsulot: <b>{name}</b>\n"
+            f"Joriy miqdor: {cur_qty} ta\n\n"
+            "Yangi miqdorni raqamda yuboring."
         )
+        if isinstance(message_or_callback, CallbackQuery):
+            await message_or_callback.message.answer(text, reply_markup=keyboard)
+        else:
+            await message_or_callback.answer(text, reply_markup=keyboard)
+
+    @router.callback_query(F.data.startswith("edit_"))
+    async def edit_order_callback(callback: CallbackQuery, state: FSMContext):
+        try:
+            parts = callback.data.split("_")
+            order_id = int(parts[1])
+        except (ValueError, IndexError):
+            await callback.answer("❌ Xatolik yuz berdi.", show_alert=True)
+            return
+
+        user = await _get_user(session_factory, callback.from_user.id, bot_config["id"])
+        if not user or not user.client_id:
+            await callback.answer("❌ Avval ro'yxatdan o'ting. /start", show_alert=True)
+            return
+
+        order = await _fetch_order(user.client_id, order_id)
+        if not order:
+            await callback.answer("❌ Buyurtma topilmadi.", show_alert=True)
+            return
+
+        goods = order.get("list_goods", []) or []
+        if not goods:
+            await callback.answer("❌ Buyurtmada mahsulotlar yo'q.", show_alert=True)
+            return
+
+        await callback.answer()
+
+        if len(goods) == 1:
+            await _ask_edit_qty(callback, state, order_id, goods[0])
+            return
+
+        buttons = []
+        for item in goods:
+            pid = item.get("id")
+            name = item.get("name", "-")
+            qty = item.get("qty", 0)
+            short = name if len(name) <= 25 else name[:24] + "…"
+            buttons.append([InlineKeyboardButton(
+                text=f"✏️ {short} ({qty} ta)",
+                callback_data=f"epick_{order_id}_{pid}",
+            )])
+
+        await callback.message.answer(
+            f"✏️ <b>Buyurtma #{order_id} — tahrirlash</b>\n\n"
+            "Qaysi mahsulotni tahrirlamoqchisiz?",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons),
+        )
+
+    @router.callback_query(F.data.startswith("epick_"))
+    async def edit_pick_product_callback(callback: CallbackQuery, state: FSMContext):
+        try:
+            _, order_id, product_id = callback.data.split("_", 2)
+            order_id = int(order_id)
+            product_id = int(product_id)
+        except (ValueError, IndexError):
+            await callback.answer("❌ Xatolik yuz berdi.", show_alert=True)
+            return
+
+        user = await _get_user(session_factory, callback.from_user.id, bot_config["id"])
+        if not user or not user.client_id:
+            await callback.answer("❌ Avval ro'yxatdan o'ting. /start", show_alert=True)
+            return
+
+        order = await _fetch_order(user.client_id, order_id)
+        if not order:
+            await callback.answer("❌ Buyurtma topilmadi.", show_alert=True)
+            return
+
+        target = None
+        for item in order.get("list_goods", []) or []:
+            try:
+                if int(item.get("id")) == product_id:
+                    target = item
+                    break
+            except (TypeError, ValueError):
+                continue
+
+        if not target:
+            await callback.answer("❌ Mahsulot topilmadi.", show_alert=True)
+            return
+
+        await callback.answer()
+        await _ask_edit_qty(callback, state, order_id, target)
 
     @router.message(EditOrderState.waiting_edit_qty, F.text == "❌ Bekor qilish")
     async def cancel_edit_qty(message: Message, state: FSMContext):
         await state.clear()
-        await message.answer("❌ Tahrirlash bekor qilindi.", reply_markup=ReplyKeyboardMarkup(
-            keyboard=[
-                [KeyboardButton(text="👤 Profil"), KeyboardButton(text="ℹ️ Info")],
-                [KeyboardButton(text="📦 Mahsulotlar"), KeyboardButton(text="📋 Buyurtmalar")],
-                [KeyboardButton(text="💰 Balans"), KeyboardButton(text="📊 Akt sverka")],
-                [KeyboardButton(text="✍️ Shikoyat")],
-            ],
-            resize_keyboard=True,
-        ))
+        await message.answer("❌ Tahrirlash bekor qilindi.", reply_markup=_main_menu_keyboard())
 
     @router.message(EditOrderState.waiting_edit_qty)
     async def process_edit_qty(message: Message, state: FSMContext):
@@ -669,34 +1081,83 @@ def create_router(
 
         data = await state.get_data()
         order_id = data["edit_order_id"]
-        product_id = data["edit_product_id"]
-        price = data["edit_price"]
+        edit_product_id = data["edit_product_id"]
+        edit_price = data["edit_price"]
+        edit_name = data.get("edit_product_name", "Mahsulot")
         await state.clear()
+
+        user = await _get_user(session_factory, message.from_user.id, bot_config["id"])
+        if not user or not user.client_id:
+            await message.answer(
+                "❌ Avval ro'yxatdan o'ting. /start",
+                reply_markup=_main_menu_keyboard(),
+            )
+            return
+
+        order = await _fetch_order(user.client_id, order_id)
+        if not order:
+            await message.answer(
+                "❌ Buyurtma topilmadi. Qaytadan urinib ko'ring.",
+                reply_markup=_main_menu_keyboard(),
+            )
+            return
+
+        products = []
+        replaced = False
+        for item in order.get("list_goods", []) or []:
+            try:
+                pid = int(item.get("id"))
+            except (TypeError, ValueError):
+                continue
+            if pid == edit_product_id:
+                use_qty = qty
+                use_price = edit_price if edit_price > 0 else _item_unit_price(item)
+                replaced = True
+            else:
+                try:
+                    use_qty = float(item.get("qty", 0))
+                except (TypeError, ValueError):
+                    use_qty = 0.0
+                use_price = _item_unit_price(item)
+            products.append({
+                "product_id": pid,
+                "price": use_price,
+                "qty": use_qty,
+                "sum": use_price * use_qty,
+            })
+
+        if not replaced:
+            products.append({
+                "product_id": edit_product_id,
+                "price": edit_price,
+                "qty": qty,
+                "sum": edit_price * qty,
+            })
 
         result = await api_service.edit_order(
             bot_config["base_url"],
             bot_config["one_c_login"],
             bot_config["one_c_password"],
             order_id=order_id,
-            products=[{
-                "product_id": product_id,
-                "price": price,
-                "qty": qty,
-                "sum": price * qty,
-            }],
+            products=products,
         )
 
         if result and not result.get("error"):
-            total = price * qty
+            total = sum(p["sum"] for p in products)
             await message.answer(
                 f"✅ <b>Buyurtma yangilandi!</b>\n"
                 f"▪️ Buyurtma ID: {order_id}\n"
-                f"▪️ Miqdor: {qty:g} ta\n"
-                f"▪️ Jami: {total:,.0f} UZS".replace(",", " ")
+                f"▪️ O'zgartirilgan: {edit_name} — {qty:g} ta\n"
+                f"▪️ Mahsulotlar: {len(products)} xil\n"
+                f"▪️ Jami: {total:,.0f} UZS".replace(",", " "),
+                reply_markup=_main_menu_keyboard(),
             )
         else:
             error = (result or {}).get("error") or (result or {}).get("message", "Noma'lum xatolik")
-            await message.answer(f"❌ Yangilash amalga oshmadi: {error}")
+            await message.answer(
+                f"❌ Yangilash amalga oshmadi: {error}",
+                reply_markup=_main_menu_keyboard(),
+            )
 
     @router.callback_query(F.data.startswith("del_"))
     async def delete_order_callback(callback: CallbackQuery):
@@ -819,17 +1280,6 @@ def create_router(
         await message.answer(
             f"<b>💰 Balans</b>\n\n"
             f"{emoji} Joriy balans: <b>{balance}</b>"
-        )
-
-    def _main_menu_keyboard():
-        return ReplyKeyboardMarkup(
-            keyboard=[
-                [KeyboardButton(text="👤 Profil"), KeyboardButton(text="ℹ️ Info")],
-                [KeyboardButton(text="📦 Mahsulotlar"), KeyboardButton(text="📋 Buyurtmalar")],
-                [KeyboardButton(text="💰 Balans"), KeyboardButton(text="📊 Akt sverka")],
-                [KeyboardButton(text="✍️ Shikoyat")],
-            ],
-            resize_keyboard=True,
         )
 
     async def _submit_complaint(message: Message, note: str, comment: str):
