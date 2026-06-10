@@ -317,6 +317,48 @@ class APIService:
                 return None
 
     @staticmethod
+    async def create_note(
+        base_url: str, login: str, password: str,
+        client_id: int, note: str, comment: str = "",
+    ) -> Optional[dict]:
+        url = f"{base_url.rstrip('/')}/hs/client/api/create_note"
+        credentials = base64.b64encode(f"{login}:{password}".encode()).decode()
+        headers = {
+            "Authorization": f"Basic {credentials}",
+            "Content-Type": "application/json",
+        }
+        payload = {
+            "client_id": client_id,
+            "note": note,
+            "comment": comment,
+        }
+
+        logger.info(
+            "📡 create_note REQUEST\n   URL: %s\n   Body: %s",
+            url, payload,
+        )
+
+        async with httpx.AsyncClient(timeout=30) as client:
+            try:
+                response = await client.post(url, json=payload, headers=headers)
+                logger.info(
+                    "📡 create_note RESPONSE\n   Status: %s %s\n   Body: %s",
+                    response.status_code, response.reason_phrase, response.text[:500],
+                )
+                response.raise_for_status()
+                return response.json()
+            except httpx.HTTPStatusError as e:
+                logger.error(
+                    "❌ create_note FAILED\n   Status: %s\n   Response: %s",
+                    e.response.status_code, e.response.text[:500],
+                )
+                try: return e.response.json()
+                except Exception: return None
+            except Exception as e:
+                logger.error("❌ create_note EXCEPTION for %s: %s", url, e)
+                return None
+
+    @staticmethod
     async def get_balance(
         base_url: str, login: str, password: str, client_id: str,
     ) -> Optional[dict]:

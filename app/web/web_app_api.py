@@ -475,6 +475,35 @@ async def get_akt_sverka(months: int = 1, auth: dict = Depends(authenticate_weba
     return {"documents": documents, "months": months}
 
 
+class CreateNoteRequest(BaseModel):
+    note: str
+    comment: str = ""
+
+
+@router.post("/create-note")
+async def create_note(req: CreateNoteRequest, auth: dict = Depends(authenticate_webapp_user)):
+    user = await _get_user(auth["telegram_id"], auth["bot_id"])
+    if not user or not user.client_id:
+        raise HTTPException(status_code=400, detail="Avval ro'yxatdan o'ting")
+
+    if not req.note.strip():
+        raise HTTPException(status_code=400, detail="Matn kiritilishi shart")
+
+    cfg = auth["bot_config"]
+    result = await api_service.create_note(
+        cfg["base_url"], cfg["one_c_login"], cfg["one_c_password"],
+        client_id=int(user.client_id),
+        note=req.note.strip(),
+        comment=req.comment.strip(),
+    )
+
+    if not result or result.get("error"):
+        error = (result or {}).get("message") or (result or {}).get("error", "Noma'lum xatolik")
+        raise HTTPException(status_code=400, detail=str(error))
+
+    return {"success": True, "id": result.get("id")}
+
+
 @router.get("/balance")
 async def get_balance(auth: dict = Depends(authenticate_webapp_user)):
     user = await _get_user(auth["telegram_id"], auth["bot_id"])

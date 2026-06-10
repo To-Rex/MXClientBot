@@ -443,6 +443,7 @@ body {
   <div id="pageOrders" class="page"></div>
   <div id="pageAkt" class="page"></div>
   <div id="pageInfo" class="page"></div>
+  <div id="pageComplaint" class="page"></div>
   <div id="pageRegister" class="page"></div>
 
   <div class="bottom-nav" id="bottomNav">
@@ -465,6 +466,10 @@ body {
     <button onclick="showPage('info')" id="navInfo">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
       Info
+    </button>
+    <button onclick="showPage('complaint')" id="navComplaint">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/><path d="M8 9h8M8 13h6"/></svg>
+      Shikoyat
     </button>
   </div>
 
@@ -492,6 +497,10 @@ body {
       <button class="sidebar-nav-item" data-page="info" onclick="showPage('info')">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
         <span>Info</span>
+      </button>
+      <button class="sidebar-nav-item" data-page="complaint" onclick="showPage('complaint')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/><path d="M8 9h8M8 13h6"/></svg>
+        <span>Shikoyat</span>
       </button>
     </nav>
   </div>
@@ -598,6 +607,7 @@ function loadPage(name) {
     case 'orders': loadOrders(); break;
     case 'akt': loadAktSverka(); break;
     case 'info': loadInfo(); break;
+    case 'complaint': loadComplaint(); break;
     case 'register': showRegister(); break;
   }
 }
@@ -971,6 +981,47 @@ async function init() {
       </div>
     `;
     document.getElementById('bottomNav').style.display = 'none';
+  }
+}
+
+// --- Complaint ---
+async function loadComplaint() {
+  renderLoader('Complaint');
+  const html = `<div class="card" style="max-width:500px;margin:0 auto">
+    <h3 style="margin-bottom:16px">✍️ Shikoyat / Taklif</h3>
+    <p style="color:var(--tg-hint);margin-bottom:16px;font-size:14px">Fikr, shikoyat yoki taklifingizni yozing.</p>
+    <div class="input-group" style="margin-bottom:12px">
+      <label>Xabar matni</label>
+      <textarea id="noteInput" rows="5" placeholder="Matnni kiriting..." style="width:100%;padding:10px;border:1px solid var(--tg-secondary-bg);border-radius:8px;background:var(--tg-bg);color:var(--tg-text);resize:vertical;font-size:14px"></textarea>
+    </div>
+    <div class="input-group" style="margin-bottom:16px">
+      <label>Izoh (ixtiyoriy)</label>
+      <input type="text" id="commentInput" placeholder="Qo'shimcha izoh..." style="width:100%;padding:10px;border:1px solid var(--tg-secondary-bg);border-radius:8px;background:var(--tg-bg);color:var(--tg-text);font-size:14px">
+    </div>
+    <button id="sendNoteBtn" onclick="sendNote()" style="width:100%;padding:12px;border:none;border-radius:8px;background:var(--tg-accent);color:#fff;font-size:15px;font-weight:600;cursor:pointer">Yuborish</button>
+    <div id="noteResult" style="margin-top:12px"></div>
+  </div>`;
+  document.getElementById('pageComplaint').innerHTML = html;
+}
+
+async function sendNote() {
+  const note = document.getElementById('noteInput').value.trim();
+  const comment = document.getElementById('commentInput').value.trim();
+  const btn = document.getElementById('sendNoteBtn');
+  const resultDiv = document.getElementById('noteResult');
+  if (!note) { resultDiv.innerHTML = '<p style="color:var(--tg-destructive);font-size:14px">❌ Matn kiriting</p>'; return; }
+  btn.disabled = true;
+  btn.textContent = 'Yuborilmoqda...';
+  try {
+    const res = await apiCall('POST', '/create-note', { note, comment });
+    resultDiv.innerHTML = '<p style="color:var(--tg-accent);font-size:14px">✅ Xabaringiz yuborildi. Rahmat!</p>';
+    document.getElementById('noteInput').value = '';
+    document.getElementById('commentInput').value = '';
+  } catch(e) {
+    resultDiv.innerHTML = '<p style="color:var(--tg-destructive);font-size:14px">❌ ' + e.message + '</p>';
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Yuborish';
   }
 }
 

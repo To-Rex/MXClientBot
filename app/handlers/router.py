@@ -55,6 +55,10 @@ class EditOrderState(StatesGroup):
 class OrderState(StatesGroup):
     waiting_qty = State()
 
+class ComplaintState(StatesGroup):
+    waiting_note = State()
+    waiting_comment = State()
+
 
 def _format_profile(profile: dict) -> str:
     lines = ["<b>👤 Mening profilim</b>\n"]
@@ -153,6 +157,7 @@ def create_router(
                     [KeyboardButton(text="👤 Profil"), KeyboardButton(text="ℹ️ Info")],
                     [KeyboardButton(text="📦 Mahsulotlar"), KeyboardButton(text="📋 Buyurtmalar")],
                     [KeyboardButton(text="💰 Balans"), KeyboardButton(text="📊 Akt sverka")],
+                    [KeyboardButton(text="✍️ Shikoyat")],
                 ],
                 resize_keyboard=True,
             )
@@ -252,6 +257,7 @@ def create_router(
                     [KeyboardButton(text="👤 Profil"), KeyboardButton(text="ℹ️ Info")],
                     [KeyboardButton(text="📦 Mahsulotlar"), KeyboardButton(text="📋 Buyurtmalar")],
                     [KeyboardButton(text="💰 Balans"), KeyboardButton(text="📊 Akt sverka")],
+                    [KeyboardButton(text="✍️ Shikoyat")],
                 ],
                 resize_keyboard=True,
             )
@@ -494,6 +500,7 @@ def create_router(
                 [KeyboardButton(text="👤 Profil"), KeyboardButton(text="ℹ️ Info")],
                 [KeyboardButton(text="📦 Mahsulotlar"), KeyboardButton(text="📋 Buyurtmalar")],
                 [KeyboardButton(text="💰 Balans"), KeyboardButton(text="📊 Akt sverka")],
+                [KeyboardButton(text="✍️ Shikoyat")],
             ],
             resize_keyboard=True,
         ))
@@ -540,6 +547,7 @@ def create_router(
                         [KeyboardButton(text="👤 Profil"), KeyboardButton(text="ℹ️ Info")],
                     [KeyboardButton(text="📦 Mahsulotlar"), KeyboardButton(text="📋 Buyurtmalar")],
                     [KeyboardButton(text="💰 Balans"), KeyboardButton(text="📊 Akt sverka")],
+                    [KeyboardButton(text="✍️ Shikoyat")],
                     ],
                     resize_keyboard=True,
                 ),
@@ -644,6 +652,7 @@ def create_router(
                 [KeyboardButton(text="👤 Profil"), KeyboardButton(text="ℹ️ Info")],
                 [KeyboardButton(text="📦 Mahsulotlar"), KeyboardButton(text="📋 Buyurtmalar")],
                 [KeyboardButton(text="💰 Balans"), KeyboardButton(text="📊 Akt sverka")],
+                [KeyboardButton(text="✍️ Shikoyat")],
             ],
             resize_keyboard=True,
         ))
@@ -785,6 +794,96 @@ def create_router(
             f"<b>💰 Balans</b>\n\n"
             f"{emoji} Joriy balans: <b>{balance}</b>"
         )
+
+    def _main_menu_keyboard():
+        return ReplyKeyboardMarkup(
+            keyboard=[
+                [KeyboardButton(text="👤 Profil"), KeyboardButton(text="ℹ️ Info")],
+                [KeyboardButton(text="📦 Mahsulotlar"), KeyboardButton(text="📋 Buyurtmalar")],
+                [KeyboardButton(text="💰 Balans"), KeyboardButton(text="📊 Akt sverka")],
+                [KeyboardButton(text="✍️ Shikoyat")],
+            ],
+            resize_keyboard=True,
+        )
+
+    async def _submit_complaint(message: Message, note: str, comment: str):
+        user = await _get_user(session_factory, message.from_user.id, bot_config["id"])
+        if not user or not user.client_id:
+            await message.answer("❌ Xatolik yuz berdi. Qaytadan urinib ko'ring.")
+            return
+        result = await api_service.create_note(
+            bot_config["base_url"],
+            bot_config["one_c_login"],
+            bot_config["one_c_password"],
+            client_id=int(user.client_id),
+            note=note,
+            comment=comment,
+        )
+        if result and not result.get("error"):
+            await message.answer(
+                "✅ Xabaringiz yuborildi. Rahmat!",
+                reply_markup=_main_menu_keyboard(),
+            )
+        else:
+            error = (result or {}).get("message") or (result or {}).get("error", "Noma'lum xatolik")
+            await message.answer(
+                f"❌ Xatolik: {error}",
+                reply_markup=_main_menu_keyboard(),
+            )
+
+    @router.message(F.text == "✍️ Shikoyat")
+    async def complaint_start(message: Message, state: FSMContext):
+        user = await _get_user(session_factory, message.from_user.id, bot_config["id"])
+        if not user or not user.client_id:
+            await message.answer(
+                "❌ Avval ro'yxatdan o'tishingiz kerak. Iltimos, /start buyrug'ini bosing."
+            )
+            return
+        await state.set_state(ComplaintState.waiting_note)
+        await message.answer(
+            "✍️ <b>Shikoyat / Taklif</b>\n\n"
+            "Fikr, shikoyat yoki taklifingizni yozing:",
+            reply_markup=ReplyKeyboardMarkup(
+                keyboard=[[KeyboardButton(text="❌ Bekor qilish")]],
+                resize_keyboard=True,
+                one_time_keyboard=True,
+            ),
+        )
+
+    @router.message(ComplaintState.waiting_note, F.text == "❌ Bekor qilish")
+    async def cancel_complaint_note(message: Message, state: FSMContext):
+        await state.clear()
+        await message.answer("Bekor qilindi.", reply_markup=_main_menu_keyboard())
+
+    @router.message(ComplaintState.waiting_note)
+    async def complaint_note_received(message: Message, state: FSMContext):
+        note = message.text.strip()
+        if not note:
+            await message.answer("❌ Matn kiritilishi shart. Qaytadan yozing:")
+            return
+        await state.update_data(note=note)
+        await state.set_state(ComplaintState.waiting_comment)
+        await message.answer(
+            "Qo'shimcha izohingiz bormi? (yo'q bo'lsa \"O'tkazib yuborish\" tugmasini bosing)",
+            reply_markup=ReplyKeyboardMarkup(
+                keyboard=[[KeyboardButton(text="O'tkazib yuborish")]],
+                resize_keyboard=True,
+                one_time_keyboard=True,
+            ),
+        )
+
+    @router.message(ComplaintState.waiting_comment, F.text == "O'tkazib yuborish")
+    async def complaint_skip_comment(message: Message, state: FSMContext):
+        data = await state.get_data()
+        await _submit_complaint(message, data["note"], "")
+        await state.clear()
+
+    @router.message(ComplaintState.waiting_comment)
+    async def complaint_comment_received(message: Message, state: FSMContext):
+        data = await state.get_data()
+        comment = message.text.strip()
+        await _submit_complaint(message, data["note"], comment)
+        await state.clear()
 
     @router.message(F.text == "📊 Akt sverka")
     async def akt_sverka_handler(message: Message):
