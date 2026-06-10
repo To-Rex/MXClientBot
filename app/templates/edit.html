@@ -5,6 +5,11 @@
 <h1>{{ bot.name }}</h1>
 
 <div class="card" style="max-width: 560px;">
+    {% if error %}
+    <div style="background:#fdecea;color:#b71c1c;padding:10px 14px;border-radius:6px;margin-bottom:14px;border:1px solid #f5c6c0">
+        {{ error }}
+    </div>
+    {% endif %}
     <form method="post">
         <div class="form-group">
             <label for="name">Bot nomi</label>

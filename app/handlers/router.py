@@ -1,4 +1,6 @@
 import logging
+import secrets
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from aiogram import F, Router
@@ -17,8 +19,11 @@ from aiogram.types import (
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, AsyncSession
 
-from app.models import User
+from app.config import WEBAPP_URL
+from app.models import User, WebSession
 from app.services.api import APIService
+
+SESSION_TTL_HOURS = 24 * 30  # 30 days
 
 logger = logging.getLogger(__name__)
 
@@ -171,6 +176,39 @@ def create_router(
             f"Assalomu alaykum! {company} botiga xush kelibsiz.\n\n"
             "Iltimos, telefon raqamingizni yuboring.",
             reply_markup=keyboard,
+        )
+
+    @router.message(Command("getsession"))
+    async def getsession_handler(message: Message):
+        if not WEBAPP_URL:
+            await message.answer(
+                "⚠️ WEBAPP_URL sozlanmagan. Administrator bilan bog'laning."
+            )
+            return
+
+        token = secrets.token_urlsafe(32)
+        expires_at = datetime.now(timezone.utc) + timedelta(hours=SESSION_TTL_HOURS)
+
+        async with session_factory() as db:
+            ws = WebSession(
+                token=token,
+                telegram_id=message.from_user.id,
+                bot_id=bot_config["id"],
+                first_name=message.from_user.first_name or "",
+                last_name=message.from_user.last_name or "",
+                username=message.from_user.username or "",
+                expires_at=expires_at,
+            )
+            db.add(ws)
+            await db.commit()
+
+        url = f"{WEBAPP_URL.rstrip('/')}/webapp?bot_id={bot_config['id']}&session={token}"
+        await message.answer(
+            "🔗 <b>Brauzer uchun shaxsiy havola</b>\n\n"
+            f"<a href=\"{url}\">{url}</a>\n\n"
+            "Bu havolani hech kim bilan bo'lishmang. "
+            f"Muddati: {SESSION_TTL_HOURS // 24} kun.",
+            disable_web_page_preview=True,
         )
 
     @router.message(F.contact)

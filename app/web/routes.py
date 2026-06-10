@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse, Response
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 
 from app.database import async_session
 from app.models import Bot, User
@@ -81,19 +82,39 @@ async def create_bot(
     one_c_password: str = Form(""),
     is_active: bool = Form(False),
 ):
-    bot = Bot(
-        name=name,
-        token=token,
-        company_name=company_name,
-        base_url=base_url,
-        one_c_login=one_c_login,
-        one_c_password=one_c_password,
-        is_active=is_active,
-    )
+    token = token.strip()
+    form_values = {
+        "name": name, "token": token, "company_name": company_name,
+        "base_url": base_url, "one_c_login": one_c_login,
+        "one_c_password": one_c_password, "is_active": is_active,
+    }
 
     async with async_session() as session:
+        existing = await session.execute(select(Bot).where(Bot.token == token))
+        if existing.scalar_one_or_none() is not None:
+            return _render(request, "create.html", {
+                "error": "Bu token bilan bot allaqachon mavjud.",
+                "form": form_values,
+            })
+
+        bot = Bot(
+            name=name,
+            token=token,
+            company_name=company_name,
+            base_url=base_url,
+            one_c_login=one_c_login,
+            one_c_password=one_c_password,
+            is_active=is_active,
+        )
         session.add(bot)
-        await session.commit()
+        try:
+            await session.commit()
+        except IntegrityError:
+            await session.rollback()
+            return _render(request, "create.html", {
+                "error": "Bu token bilan bot allaqachon mavjud.",
+                "form": form_values,
+            })
         await session.refresh(bot)
 
         if bot.is_active:
@@ -120,9 +141,21 @@ async def edit_bot(
     one_c_password: str = Form(""),
     is_active: bool = Form(False),
 ):
+    token = token.strip()
     bot = await _get_bot_or_404(bot_id)
     bm = _bot_manager(request)
     token_changed = bot.token != token
+
+    if token_changed:
+        async with async_session() as session:
+            existing = await session.execute(
+                select(Bot).where(Bot.token == token, Bot.id != bot_id)
+            )
+            if existing.scalar_one_or_none() is not None:
+                return _render(request, "edit.html", {
+                    "bot": bot,
+                    "error": "Bu token bilan boshqa bot allaqachon mavjud.",
+                })
 
     async with async_session() as session:
         bot = await session.merge(bot)
@@ -133,7 +166,15 @@ async def edit_bot(
         bot.one_c_login = one_c_login
         bot.one_c_password = one_c_password
         bot.is_active = is_active
-        await session.commit()
+        try:
+            await session.commit()
+        except IntegrityError:
+            await session.rollback()
+            bot = await _get_bot_or_404(bot_id)
+            return _render(request, "edit.html", {
+                "bot": bot,
+                "error": "Bu token bilan boshqa bot allaqachon mavjud.",
+            })
         await session.refresh(bot)
 
         if token_changed or not bm.is_running(bot.id):

@@ -254,12 +254,18 @@ body {
 </div>
 
 <script>
-const Tg = window.Telegram.WebApp;
-Tg.ready();
-Tg.expand();
+const Tg = (window.Telegram && window.Telegram.WebApp) ? window.Telegram.WebApp : {
+  initData: '', colorScheme: 'dark', themeParams: {},
+  ready: () => {}, expand: () => {}, onEvent: () => {},
+  MainButton: { setText: () => ({ hide: () => {} }), hide: () => {} },
+};
+try { Tg.ready(); } catch(e) {}
+try { Tg.expand(); } catch(e) {}
 
 const baseUrl = window.location.origin + window.location.pathname.replace(/\/[^/]*$/, '');
-const botId = new URLSearchParams(window.location.search).get('bot_id') || '1';
+const urlParams = new URLSearchParams(window.location.search);
+const botId = urlParams.get('bot_id') || '1';
+const sessionToken = urlParams.get('session') || '';
 const initData = Tg.initData || '';
 
 let currentUser = null;
@@ -268,10 +274,15 @@ let selectedProduct = null;
 let selectedOrder = null;
 let qtyCallback = null;
 
-function apiUrl(path) { return `${baseUrl}/webapp/api${path}?bot_id=${botId}`; }
+function apiUrl(path) {
+  let url = `${baseUrl}/webapp/api${path}?bot_id=${botId}`;
+  if (sessionToken) url += `&session=${encodeURIComponent(sessionToken)}`;
+  return url;
+}
 
 async function apiCall(method, path, body) {
-  const headers = { 'X-Telegram-Init-Data': initData, 'Content-Type': 'application/json' };
+  const headers = { 'Content-Type': 'application/json' };
+  if (initData) headers['X-Telegram-Init-Data'] = initData;
   const opts = { method, headers };
   if (body) opts.body = JSON.stringify(body);
   const resp = await fetch(apiUrl(path), opts);

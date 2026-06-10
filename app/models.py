@@ -45,3 +45,17 @@ class User(Base):
     )
 
     bot = relationship("Bot", back_populates="users")
+
+
+class WebSession(Base):
+    __tablename__ = "web_sessions"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    token = Column(String, nullable=False, unique=True, index=True)
+    telegram_id = Column(BigInteger, nullable=False)
+    bot_id = Column(Integer, ForeignKey("bots.id"), nullable=False)
+    first_name = Column(String, nullable=True)
+    last_name = Column(String, nullable=True)
+    username = Column(String, nullable=True)
+    expires_at = Column(DateTime, nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
