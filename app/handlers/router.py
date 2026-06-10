@@ -786,11 +786,6 @@ def create_router(
                 info_lines.append(f"▪️ <b>Agent:</b> {agent_name}")
             if status_name:
                 info_lines.append(f"▪️ <b>Status:</b> {status_name}")
-            if user.client_id:
-                info_lines.append(f"▪️ <b>Client ID:</b> {user.client_id}")
-            if user.phone_number:
-                info_lines.append(f"▪️ <b>Telefon:</b> +{user.phone_number}")
-
             if info_lines:
                 lines.append("")
                 lines.append("<b>👤 Sizning ma'lumotlaringiz:</b>")
