@@ -616,6 +616,17 @@ function renderLoader(pageId) {
   document.getElementById('page' + pageId).innerHTML = '<div class="loader"><div class="spinner"></div></div>';
 }
 
+function showNotification(msg, type) {
+  const el = document.createElement('div');
+  el.className = 'notification ' + (type || 'success');
+  el.textContent = msg;
+  el.style.cssText = 'position:fixed;top:16px;left:50%;transform:translateX(-50%);z-index:999;padding:12px 20px;border-radius:10px;font-size:14px;font-weight:500;max-width:90%;text-align:center;transition:opacity 0.3s';
+  el.style.background = type === 'error' ? 'var(--tg-destructive,#e53935)' : 'var(--tg-accent,#50b86c)';
+  el.style.color = '#fff';
+  document.body.appendChild(el);
+  setTimeout(() => { el.style.opacity = '0'; setTimeout(() => el.remove(), 300); }, 3000);
+}
+
 function setHeader(company, userId) {
   document.getElementById('companyName').textContent = company || 'MX Client Bot';
   document.getElementById('headerUserInfo').textContent = userId ? 'ID: ' + userId : '';
@@ -827,9 +838,9 @@ function startOrder(productId, price, name) {
   openQtyModal('Buyurtma', async (qty) => {
     try {
       const result = await apiCall('POST', '/orders', { product_id: productId, price: price, qty: parseFloat(qty) });
-      alert(`Buyurtma qabul qilindi!\nID: ${result.order_id}\nJami: ${formatNum(result.total)} UZS`);
+      showNotification(`✅ Buyurtma qabul qilindi! ID: ${result.order_id}`, 'success');
       showPage('orders');
-    } catch(e) { alert('Xatolik: ' + e.message); }
+    } catch(e) { showNotification('❌ ' + e.message, 'error'); }
   });
 }
 
@@ -879,9 +890,9 @@ function startEditOrder(orderId, productId, price) {
   openQtyModal('Tahrirlash', async (qty) => {
     try {
       const result = await apiCall('PATCH', `/orders/${orderId}`, { product_id: productId, price: price, qty: parseFloat(qty) });
-      alert(`Buyurtma yangilandi!\nYangi jami: ${formatNum(result.total)} UZS`);
+      showNotification(`✅ Buyurtma yangilandi! Yangi jami: ${formatNum(result.total)} UZS`, 'success');
       loadOrders();
-    } catch(e) { alert('Xatolik: ' + e.message); }
+    } catch(e) { showNotification('❌ ' + e.message, 'error'); }
   });
 }
 
@@ -889,8 +900,9 @@ async function doDeleteOrder(orderId) {
   if (!confirm('Buyurtmani o\'chirishni xohlaysizmi?')) return;
   try {
     await apiCall('DELETE', `/orders/${orderId}`);
+    showNotification('✅ Buyurtma o\'chirildi', 'success');
     loadOrders();
-  } catch(e) { alert('Xatolik: ' + e.message); }
+  } catch(e) { showNotification('❌ ' + e.message, 'error'); }
 }
 
 // --- Akt Sverka ---
@@ -953,11 +965,12 @@ function closeQtyModal() {
 document.getElementById('qtyConfirmBtn').addEventListener('click', () => {
   const qty = document.getElementById('qtyInput').value.trim().replace(',', '.');
   if (!qty || isNaN(qty) || parseFloat(qty) <= 0) {
-    alert('Iltimos, musbat miqdor kiriting');
+    showNotification('❌ Iltimos, musbat miqdor kiriting', 'error');
     return;
   }
+  const cb = qtyCallback;
   closeQtyModal();
-  if (qtyCallback) qtyCallback(qty);
+  if (cb) cb(qty);
 });
 
 // --- Init ---

@@ -732,6 +732,37 @@ def create_router(
             )
             return
 
+        company = bot_config["company_name"]
+
+        lines = [
+            f"<b>ℹ️ {company} — Bot haqida</b>",
+            "",
+            f"Ushbu bot {company} kompaniyasining mijozlar uchun mo'ljallangan rasmiy boti bo'lib, uning yordamida siz mahsulotlarni ko'rishingiz, buyurtma berishingiz hamda barcha hisob-kitoblaringizni nazorat qilishingiz mumkin.",
+            "",
+            "<b>📋 Quyidagi tugmalar mavjud:</b>",
+            "",
+            "━━━ <b>👤 Profil</b> ━━━",
+            "Shaxsiy ma'lumotlaringizni ko'rish: ism, guruh, filial, kategorya, telefon raqam, agent, status va boshqa ma'lumotlar.",
+            "",
+            "━━━ <b>📦 Mahsulotlar</b> ━━━",
+            "Barcha mahsulotlar guruhlarga ajratilgan holda ko'rsatiladi. Guruhni tanlab, ichidagi mahsulotlarni narxlari bilan ko'rishingiz va buyurtma berishingiz mumkin. Mahsulot qoldiqlari ham ko'rsatiladi.",
+            "",
+            "━━━ <b>📋 Buyurtmalar</b> ━━━",
+            "Buyurtmalaringiz ro'yxati va ularning holati. Buyurtma ID, mahsulot nomi, miqdori, summasi ko'rsatiladi. Xar bir buyurtmani tahrirlash yoki o'chirish imkoniyati mavjud.",
+            "",
+            "━━━ <b>💰 Balans</b> ━━━",
+            "Joriy moliyaviy holatingizni tekshirish. Manfiy balans (masalan, -50 000 UZS) — siz haqdorsiz (kompaniya sizdan qarzdor), musbat balans — qarzdorlik mavjud.",
+            "",
+            "━━━ <b>📊 Akt sverka</b> ━━━",
+            "Hisob-kitoblar bo'yicha batafsil ko'chirma. 1, 2 yoki 3 oylik muddatni tanlab, barcha buyurtma va to'lovlar ro'yxatini, balans o'zgarishlarini va umumiy qarzdorlikni ko'rishingiz mumkin.",
+            "",
+            "━━━ <b>✍️ Shikoyat</b> ━━━",
+            "Fikr, shikoyat yoki takliflaringizni qoldiring. Matn va qo'shimcha izoh kiritishingiz mumkin. Xabaringiz tez orada ko'rib chiqiladi.",
+            "",
+            "<b>🌐 Web-sahifa</b>",
+            f"Barcha funksiyalar bilan qulay interfeys orqali tanishish uchun {company} botidagi <code>/start</code> tugmasini bosing va <b>\"Web-sahifani ochish\"</b> havolasidan foydalaning. Telefon va kompyuterda ishlaydi.",
+        ]
+
         profile = await api_service.get_client_info(
             bot_config["base_url"],
             bot_config["one_c_login"],
@@ -739,10 +770,8 @@ def create_router(
             user.client_id,
         )
 
-        company = bot_config["company_name"]
-        lines = [f"<b>ℹ️ {company}</b>\n"]
-
         if profile:
+            info_lines = []
             branch = profile.get("filial_name") or profile.get("branch", "")
             group_name = profile.get("group_name") or profile.get("group", "")
             agent_data = profile.get("agent", {})
@@ -750,20 +779,22 @@ def create_router(
             status_name = profile.get("status_name") or profile.get("status", "")
 
             if branch:
-                lines.append(f"▪️ <b>Filial:</b> {branch}")
+                info_lines.append(f"▪️ <b>Filial:</b> {branch}")
             if group_name:
-                lines.append(f"▪️ <b>Guruh:</b> {group_name}")
+                info_lines.append(f"▪️ <b>Guruh:</b> {group_name}")
             if agent_name:
-                lines.append(f"▪️ <b>Agent:</b> {agent_name}")
+                info_lines.append(f"▪️ <b>Agent:</b> {agent_name}")
             if status_name:
-                lines.append(f"▪️ <b>Status:</b> {status_name}")
+                info_lines.append(f"▪️ <b>Status:</b> {status_name}")
             if user.client_id:
-                lines.append(f"▪️ <b>Client ID:</b> {user.client_id}")
+                info_lines.append(f"▪️ <b>Client ID:</b> {user.client_id}")
             if user.phone_number:
-                lines.append(f"▪️ <b>Telefon:</b> +{user.phone_number}")
+                info_lines.append(f"▪️ <b>Telefon:</b> +{user.phone_number}")
 
-        if len(lines) == 1:
-            lines.append("Ma'lumot topilmadi.")
+            if info_lines:
+                lines.append("")
+                lines.append("<b>👤 Sizning ma'lumotlaringiz:</b>")
+                lines.extend(info_lines)
 
         await message.answer("\n".join(lines))
 
