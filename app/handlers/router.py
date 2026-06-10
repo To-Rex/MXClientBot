@@ -152,7 +152,7 @@ def create_router(
                 keyboard=[
                     [KeyboardButton(text="👤 Profil"), KeyboardButton(text="ℹ️ Info")],
                     [KeyboardButton(text="📦 Mahsulotlar"), KeyboardButton(text="📋 Buyurtmalar")],
-                    [KeyboardButton(text="📊 Akt sverka")],
+                    [KeyboardButton(text="💰 Balans"), KeyboardButton(text="📊 Akt sverka")],
                 ],
                 resize_keyboard=True,
             )
@@ -251,7 +251,7 @@ def create_router(
                 keyboard=[
                     [KeyboardButton(text="👤 Profil"), KeyboardButton(text="ℹ️ Info")],
                     [KeyboardButton(text="📦 Mahsulotlar"), KeyboardButton(text="📋 Buyurtmalar")],
-                    [KeyboardButton(text="📊 Akt sverka")],
+                    [KeyboardButton(text="💰 Balans"), KeyboardButton(text="📊 Akt sverka")],
                 ],
                 resize_keyboard=True,
             )
@@ -493,7 +493,7 @@ def create_router(
             keyboard=[
                 [KeyboardButton(text="👤 Profil"), KeyboardButton(text="ℹ️ Info")],
                 [KeyboardButton(text="📦 Mahsulotlar"), KeyboardButton(text="📋 Buyurtmalar")],
-                [KeyboardButton(text="📊 Akt sverka")],
+                [KeyboardButton(text="💰 Balans"), KeyboardButton(text="📊 Akt sverka")],
             ],
             resize_keyboard=True,
         ))
@@ -538,8 +538,8 @@ def create_router(
                 reply_markup=ReplyKeyboardMarkup(
                     keyboard=[
                         [KeyboardButton(text="👤 Profil"), KeyboardButton(text="ℹ️ Info")],
-                        [KeyboardButton(text="📦 Mahsulotlar"), KeyboardButton(text="📋 Buyurtmalar")],
-                        [KeyboardButton(text="📊 Akt sverka")],
+                    [KeyboardButton(text="📦 Mahsulotlar"), KeyboardButton(text="📋 Buyurtmalar")],
+                    [KeyboardButton(text="💰 Balans"), KeyboardButton(text="📊 Akt sverka")],
                     ],
                     resize_keyboard=True,
                 ),
@@ -643,7 +643,7 @@ def create_router(
             keyboard=[
                 [KeyboardButton(text="👤 Profil"), KeyboardButton(text="ℹ️ Info")],
                 [KeyboardButton(text="📦 Mahsulotlar"), KeyboardButton(text="📋 Buyurtmalar")],
-                [KeyboardButton(text="📊 Akt sverka")],
+                [KeyboardButton(text="💰 Balans"), KeyboardButton(text="📊 Akt sverka")],
             ],
             resize_keyboard=True,
         ))
@@ -757,6 +757,34 @@ def create_router(
             lines.append("Ma'lumot topilmadi.")
 
         await message.answer("\n".join(lines))
+
+    @router.message(F.text == "💰 Balans")
+    async def balance_handler(message: Message):
+        user = await _get_user(session_factory, message.from_user.id, bot_config["id"])
+        if not user or not user.client_id:
+            await message.answer(
+                "❌ Avval ro'yxatdan o'tishingiz kerak. Iltimos, /start buyrug'ini bosing."
+            )
+            return
+
+        data = await api_service.get_balance(
+            bot_config["base_url"],
+            bot_config["one_c_login"],
+            bot_config["one_c_password"],
+            user.client_id,
+        )
+
+        if not data or not data.get("balance"):
+            await message.answer("❌ Balansni olishda xatolik yuz berdi.")
+            return
+
+        balance = data["balance"].strip()
+        is_negative = balance.startswith("-")
+        emoji = "🟢" if is_negative else "🔴"
+        await message.answer(
+            f"<b>💰 Balans</b>\n\n"
+            f"{emoji} Joriy balans: <b>{balance}</b>"
+        )
 
     @router.message(F.text == "📊 Akt sverka")
     async def akt_sverka_handler(message: Message):

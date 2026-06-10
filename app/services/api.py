@@ -315,3 +315,33 @@ class APIService:
             except Exception as e:
                 logger.error("❌ akt_sverka EXCEPTION for %s: %s", url, e)
                 return None
+
+    @staticmethod
+    async def get_balance(
+        base_url: str, login: str, password: str, client_id: str,
+    ) -> Optional[dict]:
+        url = f"{base_url.rstrip('/')}/hs/client/api/get_balance?client_id={client_id}"
+        credentials = base64.b64encode(f"{login}:{password}".encode()).decode()
+        headers = {"Authorization": f"Basic {credentials}"}
+
+        logger.info("📡 get_balance REQUEST\n   URL: %s", url)
+
+        async with httpx.AsyncClient(timeout=30) as client:
+            try:
+                response = await client.get(url, headers=headers)
+                logger.info(
+                    "📡 get_balance RESPONSE\n   Status: %s %s\n   Body: %s",
+                    response.status_code, response.reason_phrase, response.text[:500],
+                )
+                response.raise_for_status()
+                return response.json()
+            except httpx.HTTPStatusError as e:
+                logger.error(
+                    "❌ get_balance FAILED\n   Status: %s\n   Response: %s",
+                    e.response.status_code, e.response.text[:500],
+                )
+                try: return e.response.json()
+                except Exception: return None
+            except Exception as e:
+                logger.error("❌ get_balance EXCEPTION for %s: %s", url, e)
+                return None

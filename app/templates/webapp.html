@@ -654,7 +654,10 @@ async function doRegister() {
 async function loadProfile() {
   renderLoader('Profile');
   try {
-    const data = await apiCall('GET', '/profile');
+    const [data, balanceData] = await Promise.all([
+      apiCall('GET', '/profile'),
+      apiCall('GET', '/balance').catch(() => null),
+    ]);
     const el = document.getElementById('pageProfile');
     if (!data.fields || data.fields.length === 0) {
       el.innerHTML = '<div class="empty">Profil ma\'lumotlari topilmadi</div>';
@@ -671,6 +674,21 @@ async function loadProfile() {
         <div class="sub">Profil ma'lumotlari</div>
       </div>
     </div>`;
+
+    if (balanceData && balanceData.balance) {
+      const bal = balanceData.balance.trim();
+      const isNeg = bal.startsWith('-');
+      html += `<div class="profile-section">
+        <div class="profile-section-title">Balans</div>
+        <div class="profile-card"><div class="profile-field">
+          <div class="profile-field-icon">💰</div>
+          <div class="profile-field-content">
+            <div class="pf-label">Joriy balans</div>
+            <div class="pf-value" style="color:${isNeg ? 'var(--tg-accent)' : 'var(--tg-destructive)'};font-size:18px">${bal}</div>
+          </div>
+        </div></div>
+      </div>`;
+    }
 
     const iconMap = {
       'Ism': '👤', 'Guruh': '📁', 'Filial': '🏪', 'Manzil': '📍',

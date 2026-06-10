@@ -473,3 +473,24 @@ async def get_akt_sverka(months: int = 1, auth: dict = Depends(authenticate_weba
         })
 
     return {"documents": documents, "months": months}
+
+
+@router.get("/balance")
+async def get_balance(auth: dict = Depends(authenticate_webapp_user)):
+    user = await _get_user(auth["telegram_id"], auth["bot_id"])
+    if not user or not user.client_id:
+        raise HTTPException(status_code=400, detail="Avval ro'yxatdan o'ting")
+
+    cfg = auth["bot_config"]
+    data = await api_service.get_balance(
+        cfg["base_url"], cfg["one_c_login"], cfg["one_c_password"],
+        user.client_id,
+    )
+
+    if not data:
+        raise HTTPException(status_code=502, detail="Balansni olishda xatolik")
+
+    return {
+        "balance": data.get("balance", "0 UZS"),
+        "client_id": user.client_id,
+    }
