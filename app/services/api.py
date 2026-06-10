@@ -54,7 +54,8 @@ class APIService:
                     "   Response: %s",
                     url, e.response.status_code, e.response.text[:1000],
                 )
-                return None
+                try: return e.response.json()
+                except Exception: return None
             except Exception as e:
                 logger.error("❌ register_device EXCEPTION for %s: %s", url, e)
                 return None
@@ -94,7 +95,8 @@ class APIService:
                     "   Response: %s",
                     url, e.response.status_code, e.response.text[:1000],
                 )
-                return None
+                try: return e.response.json()
+                except Exception: return None
             except Exception as e:
                 logger.error("❌ get_client_info EXCEPTION for %s: %s", url, e)
                 return None
@@ -123,7 +125,8 @@ class APIService:
                     "❌ get_products FAILED\n   URL: %s\n   Status: %s\n   Response: %s",
                     url, e.response.status_code, e.response.text[:500],
                 )
-                return None
+                try: return e.response.json()
+                except Exception: return None
             except Exception as e:
                 logger.error("❌ get_products EXCEPTION for %s: %s", url, e)
                 return None
@@ -168,7 +171,8 @@ class APIService:
                     "❌ create_order FAILED\n   Status: %s\n   Response: %s",
                     e.response.status_code, e.response.text[:500],
                 )
-                return None
+                try: return e.response.json()
+                except Exception: return None
             except Exception as e:
                 logger.error("❌ create_order EXCEPTION for %s: %s", url, e)
                 return None
@@ -197,7 +201,8 @@ class APIService:
                     "❌ get_orders FAILED\n   Status: %s\n   Response: %s",
                     e.response.status_code, e.response.text[:500],
                 )
-                return None
+                try: return e.response.json()
+                except Exception: return None
             except Exception as e:
                 logger.error("❌ get_orders EXCEPTION for %s: %s", url, e)
                 return None
@@ -230,7 +235,8 @@ class APIService:
                     "❌ delete_order FAILED\n   Status: %s\n   Response: %s",
                     e.response.status_code, e.response.text[:500],
                 )
-                return None
+                try: return e.response.json()
+                except Exception: return None
             except Exception as e:
                 logger.error("❌ delete_order EXCEPTION for %s: %s", url, e)
                 return None
@@ -264,7 +270,8 @@ class APIService:
                     "❌ edit_order FAILED\n   Status: %s\n   Response: %s",
                     e.response.status_code, e.response.text[:500],
                 )
-                return None
+                try: return e.response.json()
+                except Exception: return None
             except Exception as e:
                 logger.error("❌ edit_order EXCEPTION for %s: %s", url, e)
                 return None
@@ -303,7 +310,8 @@ class APIService:
                     "❌ akt_sverka FAILED\n   Status: %s\n   Response: %s",
                     e.response.status_code, e.response.text[:500],
                 )
-                return None
+                try: return e.response.json()
+                except Exception: return None
             except Exception as e:
                 logger.error("❌ akt_sverka EXCEPTION for %s: %s", url, e)
                 return None

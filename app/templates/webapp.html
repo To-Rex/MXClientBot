@@ -103,21 +103,100 @@ body {
 .field-item:last-child { border-bottom: none; }
 .field-item .flabel { color: var(--tg-hint); }
 
-.gallery { display: flex; gap: 8px; overflow-x: auto; margin-top: 10px; }
-.gallery img { width: 160px; height: 160px; object-fit: cover; border-radius: 10px; flex-shrink: 0; }
+/* --- Profile --- */
+.profile-avatar {
+  width: 56px; height: 56px; border-radius: 50%;
+  background: var(--tg-button);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 22px; font-weight: 700; color: #fff;
+  flex-shrink: 0;
+}
+.profile-head {
+  display: flex; align-items: center; gap: 14px;
+  padding: 0 0 16px;
+}
+.profile-head-info { flex: 1; min-width: 0; }
+.profile-head-info h2 { font-size: 18px; font-weight: 700; line-height: 1.3; }
+.profile-head-info .sub { font-size: 12px; color: var(--tg-hint); margin-top: 1px; }
+.profile-section { margin-bottom: 16px; }
+.profile-section-title {
+  font-size: 11px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.06em; color: var(--tg-hint);
+  margin-bottom: 8px;
+  opacity: 0.6;
+}
+.profile-card {
+  background: var(--tg-card-bg);
+  border-radius: 14px;
+  padding: 4px 0;
+  border: 1px solid var(--tg-border);
+  overflow: hidden;
+}
+.profile-field {
+  display: flex; align-items: center; gap: 12px;
+  padding: 11px 14px;
+  border-bottom: 1px solid var(--tg-border);
+}
+.profile-field:last-child { border-bottom: none; }
+.profile-field-icon {
+  width: 28px; height: 28px; border-radius: 8px;
+  background: var(--tg-secondary-bg);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 13px; flex-shrink: 0;
+}
+.profile-field-content { flex: 1; min-width: 0; }
+.profile-field-content .pf-label { font-size: 11px; color: var(--tg-hint); margin-bottom: 1px; }
+.profile-field-content .pf-value { font-size: 14px; font-weight: 500; word-break: break-word; }
+.gallery {
+  display: flex; gap: 8px; overflow-x: auto; padding: 4px 0; scroll-snap-type: x mandatory;
+  -webkit-overflow-scrolling: touch;
+}
+.gallery::-webkit-scrollbar { display: none; }
+.gallery img {
+  width: 180px; height: 180px; object-fit: cover; border-radius: 12px; flex-shrink: 0;
+  scroll-snap-align: start;
+}
 
 .product-card {
   background: var(--tg-card-bg);
-  border-radius: 12px;
+  border-radius: 14px;
   overflow: hidden;
-  margin-bottom: 10px;
   border: 1px solid var(--tg-border);
 }
 .product-card img { width: 100%; height: 200px; object-fit: cover; display: block; }
-.product-card .pc-body { padding: 12px; }
-.product-card .pc-name { font-size: 16px; font-weight: 600; margin-bottom: 4px; }
-.product-card .pc-meta { font-size: 13px; color: var(--tg-hint); margin-bottom: 8px; }
+.product-card .pc-body { padding: 14px; }
+.product-card .pc-name { font-size: 15px; font-weight: 600; margin-bottom: 4px; }
+.product-card .pc-meta { font-size: 13px; color: var(--tg-hint); margin-bottom: 10px; line-height: 1.4; }
 .product-card .pc-status { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 4px; }
+.product-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 12px;
+}
+.product-grid .product-card { margin-bottom: 0; }
+.group-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 12px;
+}
+.group-tile {
+  background: var(--tg-card-bg);
+  border: 1px solid var(--tg-border);
+  border-radius: 16px;
+  padding: 20px 14px;
+  text-align: center;
+  cursor: pointer;
+  transition: transform .1s;
+}
+.group-tile:active { transform: scale(0.96); }
+.group-tile .gt-icon {
+  width: 48px; height: 48px; border-radius: 14px;
+  background: var(--tg-secondary-bg);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 22px; margin: 0 auto 10px;
+}
+.group-tile .gt-name { font-size: 14px; font-weight: 600; margin-bottom: 4px; }
+.group-tile .gt-count { font-size: 12px; color: var(--tg-hint); }
 .status-green { background: var(--tg-status-green); }
 .status-red { background: var(--tg-status-red); }
 .status-yellow { background: var(--tg-status-yellow); }
@@ -180,12 +259,113 @@ body {
 .tabs button { flex: 1; padding: 8px; border: none; border-radius: 8px; background: transparent; color: var(--tg-hint); font-size: 13px; font-weight: 500; cursor: pointer; }
 .tabs button.active { background: var(--tg-card-bg); color: var(--tg-text); }
 
-.order-card { background: var(--tg-card-bg); border-radius: 12px; padding: 14px; margin-bottom: 10px; border: 1px solid var(--tg-border); }
-.order-card .order-header { display: flex; justify-content: space-between; align-items: start; margin-bottom: 8px; }
-.order-card .order-id { font-weight: 700; font-size: 15px; }
-.order-card .order-sum { font-weight: 600; color: var(--tg-accent); }
-.order-card .order-item { font-size: 13px; padding: 3px 0; color: var(--tg-hint); }
-.order-card .order-actions { display: flex; gap: 8px; margin-top: 10px; }
+/* --- Orders --- */
+.order-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: 12px;
+}
+.order-grid .order-card { margin-bottom: 0; }
+.order-card {
+  background: var(--tg-card-bg);
+  border-radius: 14px;
+  padding: 16px;
+  margin-bottom: 12px;
+  border: 1px solid var(--tg-border);
+}
+.order-card .order-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  position: relative;
+}
+.order-card .order-id {
+  font-weight: 700;
+  font-size: 13px;
+  color: var(--tg-hint);
+  letter-spacing: 0.02em;
+}
+.order-card .order-sum {
+  font-weight: 700;
+  font-size: 16px;
+  color: var(--tg-accent);
+}
+.order-card .order-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  padding-bottom: 10px;
+  margin-bottom: 10px;
+  border-bottom: 1px solid var(--tg-border);
+}
+.order-card .order-items {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+.order-card .order-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 13px;
+  padding: 6px 10px;
+  background: var(--tg-secondary-bg);
+  border-radius: 8px;
+  color: var(--tg-text);
+}
+.order-card .order-item .oi-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-right: 8px;
+}
+.order-card .order-item .oi-qty {
+  color: var(--tg-hint);
+  white-space: nowrap;
+  margin-right: 12px;
+}
+.order-card .order-item .oi-sum {
+  font-weight: 600;
+  white-space: nowrap;
+  color: var(--tg-text);
+}
+.order-menu-btn {
+  background: none; border: none; color: var(--tg-hint);
+  font-size: 20px; cursor: pointer; padding: 4px 8px;
+  border-radius: 8px; line-height: 1;
+  transition: background .15s;
+}
+.order-menu-btn:hover { background: var(--tg-secondary-bg); }
+.order-menu {
+  position: absolute;
+  right: 0; bottom: 100%; margin-bottom: 4px;
+  background: var(--tg-card-bg);
+  border: 1px solid var(--tg-border);
+  border-radius: 10px;
+  padding: 4px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+  z-index: 50;
+  min-width: 140px;
+  display: none;
+  overflow: hidden;
+}
+.order-menu.show { display: block; }
+.order-menu-item {
+  display: flex; align-items: center; gap: 8px;
+  width: 100%; padding: 10px 12px; border: none; background: none;
+  font-size: 14px; color: var(--tg-text); cursor: pointer;
+  border-radius: 8px; text-align: left;
+  transition: background .1s;
+}
+.order-menu-item:hover { background: var(--tg-secondary-bg); }
+.order-menu-item.danger { color: var(--tg-destructive); }
 
 .akt-card { background: var(--tg-card-bg); border-radius: 12px; padding: 14px; margin-bottom: 10px; border: 1px solid var(--tg-border); }
 .akt-card .akt-header { display: flex; justify-content: space-between; margin-bottom: 6px; }
@@ -197,6 +377,56 @@ body {
   background: var(--tg-secondary-bg);
   display: flex; align-items: center; justify-content: center;
   color: var(--tg-hint); font-size: 14px;
+}
+
+/* --- Sidebar (desktop only) --- */
+.sidebar { display: none; }
+
+/* --- Desktop responsive --- */
+@media (min-width: 768px) {
+  body {
+    background: #111112;
+    display: flex;
+    padding-bottom: 0;
+  }
+  .sidebar {
+    display: flex;
+    flex-direction: column;
+    width: 220px;
+    height: 100vh;
+    position: fixed;
+    left: 0; top: 0;
+    background: var(--tg-secondary-bg);
+    border-right: 1px solid var(--tg-border);
+    padding: 16px 10px;
+    z-index: 200;
+  }
+  .sidebar-header { padding: 0 12px 16px; }
+  .sidebar-header h2 { font-size: 16px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .sidebar-nav { display: flex; flex-direction: column; gap: 2px; flex: 1; overflow-y: auto; }
+  .sidebar-nav-item {
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 12px; border: none; background: transparent;
+    color: var(--tg-hint); font-size: 14px; font-weight: 500;
+    border-radius: 10px; cursor: pointer;
+    transition: all .15s; text-align: left;
+    width: 100%;
+  }
+  .sidebar-nav-item:hover { background: var(--tg-card-bg); color: var(--tg-text); }
+  .sidebar-nav-item.active { background: var(--tg-button); color: var(--tg-button-text); }
+  .sidebar-nav-item svg { width: 20px; height: 20px; flex-shrink: 0; stroke: currentColor; fill: none; }
+
+  #app {
+    margin-left: 220px;
+    width: calc(100% - 220px);
+    min-height: 100vh;
+    background: var(--tg-bg);
+  }
+  .bottom-nav { display: none; }
+  .header { max-width: none; }
+  .modal-overlay { padding: 40px; }
+  .gallery img { width: 260px; height: 260px; }
+  .product-card img { height: 260px; }
 }
 </style>
 </head>
@@ -237,6 +467,34 @@ body {
       Info
     </button>
   </div>
+
+  <div class="sidebar" id="sidebarNav">
+    <div class="sidebar-header">
+      <h2 id="sidebarCompany">MX Client</h2>
+    </div>
+    <nav class="sidebar-nav">
+      <button class="sidebar-nav-item active" data-page="profile" onclick="showPage('profile')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M6 21v-2a4 4 0 014-4h4a4 4 0 014 4v2"/></svg>
+        <span>Profil</span>
+      </button>
+      <button class="sidebar-nav-item" data-page="products" onclick="showPage('products')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="20" height="15" rx="2"/><path d="M16 7V5a2 2 0 00-2-2h-4a2 2 0 00-2 2v2"/><path d="M2 12h20"/></svg>
+        <span>Mahsulotlar</span>
+      </button>
+      <button class="sidebar-nav-item" data-page="orders" onclick="showPage('orders')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+        <span>Buyurtmalar</span>
+      </button>
+      <button class="sidebar-nav-item" data-page="akt" onclick="showPage('akt')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/><path d="M12 7v5l3 3"/></svg>
+        <span>Akt sverka</span>
+      </button>
+      <button class="sidebar-nav-item" data-page="info" onclick="showPage('info')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
+        <span>Info</span>
+      </button>
+    </nav>
+  </div>
 </div>
 
 <div class="modal-overlay" id="qtyModal">
@@ -275,7 +533,8 @@ let selectedOrder = null;
 let qtyCallback = null;
 
 function apiUrl(path) {
-  let url = `${baseUrl}/webapp/api${path}?bot_id=${botId}`;
+  const sep = path.includes('?') ? '&' : '?';
+  let url = `${baseUrl}/webapp/api${path}${sep}bot_id=${botId}`;
   if (sessionToken) url += `&session=${encodeURIComponent(sessionToken)}`;
   return url;
 }
@@ -314,11 +573,14 @@ Tg.MainButton.setText('Ro\'yxatdan o\'tish').hide();
 function showPage(name) {
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('.bottom-nav button').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.sidebar-nav-item').forEach(b => b.classList.remove('active'));
 
   const pageEl = document.getElementById('page' + name.charAt(0).toUpperCase() + name.slice(1));
   if (pageEl) pageEl.classList.add('active');
   const navEl = document.getElementById('nav' + name.charAt(0).toUpperCase() + name.slice(1));
   if (navEl) navEl.classList.add('active');
+  const sideEl = document.querySelector(`.sidebar-nav-item[data-page="${name}"]`);
+  if (sideEl) sideEl.classList.add('active');
 
   currentPage = name;
   loadPage(name);
@@ -347,6 +609,7 @@ function renderLoader(pageId) {
 function setHeader(company, userId) {
   document.getElementById('companyName').textContent = company || 'MX Client Bot';
   document.getElementById('headerUserInfo').textContent = userId ? 'ID: ' + userId : '';
+  document.getElementById('sidebarCompany').textContent = company || 'MX Client';
 }
 
 function renderAlert(type, msg) {
@@ -393,20 +656,56 @@ async function loadProfile() {
   try {
     const data = await apiCall('GET', '/profile');
     const el = document.getElementById('pageProfile');
-    let html = '';
-    if (data.fields && data.fields.length > 0) {
-      html += '<div class="card"><h3>Profil</h3><div class="fields">';
-      data.fields.forEach(f => {
-        html += `<div class="field-item"><span class="flabel">${f.label}</span><span>${f.value}</span></div>`;
-      });
-      html += '</div></div>';
+    if (!data.fields || data.fields.length === 0) {
+      el.innerHTML = '<div class="empty">Profil ma\'lumotlari topilmadi</div>';
+      return;
     }
+
+    const nameField = data.fields.find(f => f.label === 'Ism');
+    const initial = nameField ? nameField.value.charAt(0).toUpperCase() : '?';
+
+    let html = `<div class="profile-head">
+      <div class="profile-avatar">${initial}</div>
+      <div class="profile-head-info">
+        <h2>${nameField ? nameField.value : 'Foydalanuvchi'}</h2>
+        <div class="sub">Profil ma'lumotlari</div>
+      </div>
+    </div>`;
+
+    const iconMap = {
+      'Ism': '👤', 'Guruh': '📁', 'Filial': '🏪', 'Manzil': '📍',
+      'Kategoriya': '🏷️', 'Telefon': '📞', 'Agent': '🤝', 'Status': '✅',
+      'Tashrif kunlari': '📅', 'Faoliyat turlari': '⚙️',
+    };
+
+    let fieldsHtml = '';
+    data.fields.forEach(f => {
+      const icon = iconMap[f.label] || '📄';
+      fieldsHtml += `<div class="profile-field">
+        <div class="profile-field-icon">${icon}</div>
+        <div class="profile-field-content">
+          <div class="pf-label">${f.label}</div>
+          <div class="pf-value">${f.value}</div>
+        </div>
+      </div>`;
+    });
+    if (fieldsHtml) {
+      html += `<div class="profile-section">
+        <div class="profile-section-title">Ma'lumotlar</div>
+        <div class="profile-card">${fieldsHtml}</div>
+      </div>`;
+    }
+
     if (data.images && data.images.length > 0) {
-      html += '<div class="gallery">';
-      data.images.forEach(url => { html += `<img src="${url}" alt="" loading="lazy">`; });
-      html += '</div>';
+      let imgsHtml = '';
+      data.images.forEach(url => { imgsHtml += `<img src="${url}" alt="" loading="lazy">`; });
+      html += `<div class="profile-section">
+        <div class="profile-section-title">Rasmlar</div>
+        <div class="gallery">${imgsHtml}</div>
+      </div>`;
     }
-    el.innerHTML = html || '<div class="empty">Profil ma\'lumotlari topilmadi</div>';
+
+    el.innerHTML = html;
   } catch(e) {
     document.getElementById('pageProfile').innerHTML = renderAlert('error', e.message);
   }
@@ -438,12 +737,20 @@ async function loadProductGroups() {
       el.innerHTML = '<div class="empty">Mahsulotlar topilmadi</div>';
       return;
     }
-    let html = '<h3 style="margin-bottom:12px">Mahsulot guruhlari</h3>';
-    data.groups.forEach(g => {
-      html += `<div class="card" onclick="loadProductsByGroup(${g.group_id}, '${g.group_name}')" style="cursor:pointer">
-        <div class="card-row"><span style="font-weight:600">${g.group_name}</span><span style="color:var(--tg-hint)">${g.product_count} ta</span></div>
+    const icons = ['📦', '🥤', '🍪', '🧃', '🥜', '🍫', '🧴', '🛍️', '📋', '🏷️'];
+    let html = `<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+      <h3 style="font-size:18px;font-weight:700">Mahsulot guruhlari</h3>
+      <span style="font-size:13px;color:var(--tg-hint);background:var(--tg-secondary-bg);padding:4px 10px;border-radius:8px">${data.groups.length} ta</span>
+    </div><div class="group-grid">`;
+    data.groups.forEach((g, i) => {
+      const icon = icons[i % icons.length];
+      html += `<div class="group-tile" onclick="loadProductsByGroup(${g.group_id}, '${g.group_name.replace(/'/g, "\\'")}')">
+        <div class="gt-icon">${icon}</div>
+        <div class="gt-name">${g.group_name}</div>
+        <div class="gt-count">${g.product_count} ta mahsulot</div>
       </div>`;
     });
+    html += '</div>';
     el.innerHTML = html;
   } catch(e) {
     document.getElementById('pageProducts').innerHTML = renderAlert('error', e.message);
@@ -455,13 +762,17 @@ async function loadProductsByGroup(groupId, groupName) {
   try {
     const data = await apiCall('GET', `/products/${groupId}`);
     const el = document.getElementById('pageProducts');
-    let html = `<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
+    let html = `<div style="display:flex;align-items:center;gap:8px;margin-bottom:16px">
       <button class="btn btn-sm btn-outline" onclick="loadProductGroups()" style="width:auto">← Orqaga</button>
-      <h3>${groupName}</h3>
+      <h3 style="font-size:18px;font-weight:700">${groupName}</h3>
+      <span style="font-size:13px;color:var(--tg-hint);margin-left:auto;background:var(--tg-secondary-bg);padding:4px 10px;border-radius:8px">${data.products ? data.products.length : 0} ta</span>
     </div>`;
     if (!data.products || data.products.length === 0) {
       html += '<div class="empty">Bu guruhda mahsulotlar yo\'q</div>';
+      el.innerHTML = html;
+      return;
     }
+    html += '<div class="product-grid">';
     data.products.forEach(p => {
       const statusIcon = { green: '🟢', red: '🔴', yellow: '🟡' }[p.status] || '';
       const imgHtml = p.images.length > 0
@@ -471,11 +782,12 @@ async function loadProductsByGroup(groupId, groupName) {
         ${imgHtml}
         <div class="pc-body">
           <div class="pc-name">${statusIcon} ${p.name}</div>
-          <div class="pc-meta">💰 ${formatNum(p.price)} ${p.currency}${p.qty ? ' | 📦 Qoldiq: ' + p.qty + ' ta' : ''}</div>
+          <div class="pc-meta">💰 ${formatNum(p.price)} ${p.currency}${p.qty ? '<br>📦 Qoldiq: ' + p.qty + ' ta' : ''}</div>
           <button class="btn btn-primary btn-sm" onclick="startOrder(${p.id}, ${p.price}, '${p.name.replace(/'/g, "\\'")}')" style="width:auto">🛒 Buyurtma berish</button>
         </div>
       </div>`;
     });
+    html += '</div>';
     el.innerHTML = html;
   } catch(e) {
     document.getElementById('pageProducts').innerHTML = renderAlert('error', e.message);
@@ -503,19 +815,31 @@ async function loadOrders() {
       el.innerHTML = '<div class="empty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/></svg>Hozircha buyurtmalar yo\'q</div>';
       return;
     }
-    let html = '<h3 style="margin-bottom:12px">Buyurtmalar</h3>';
+    let html = `<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+      <h3 style="font-size:18px;font-weight:700">Buyurtmalar</h3>
+      <span style="font-size:13px;color:var(--tg-hint);background:var(--tg-secondary-bg);padding:4px 10px;border-radius:8px">${data.orders.length} ta</span>
+    </div><div class="order-grid">`;
     data.orders.forEach(o => {
-      let itemsHtml = o.items.map(i => `<div class="order-item">▪️ ${i.name} — ${i.qty} ta (${formatNum(i.summa)} UZS)</div>`).join('');
+      let itemsHtml = o.items.map(i => `<div class="order-item">
+        <span class="oi-name">${i.name}</span>
+        <span class="oi-qty">${i.qty} ta</span>
+        <span class="oi-sum">${formatNum(i.summa)} UZS</span>
+      </div>`).join('');
       html += `<div class="order-card">
-        <div class="order-header"><span class="order-id">📋 Buyurtma #${o.id}</span><span class="order-sum">${formatNum(o.total_sum)} UZS</span></div>
-        <div class="order-item">👤 ${o.name}</div>
-        ${itemsHtml}
-        <div class="order-actions">
-          <button class="btn btn-outline btn-sm" onclick="startEditOrder(${o.id}, ${o.first_product_id}, ${o.first_price})">✏️ Tahrirlash</button>
-          <button class="btn btn-danger btn-sm" onclick="doDeleteOrder(${o.id})">🗑 O'chirish</button>
+        <div class="order-header">
+          <span class="order-id">#ORD-${String(o.id).padStart(4, '0')}</span>
+          <span class="order-sum">${formatNum(o.total_sum)} UZS</span>
+          <button class="order-menu-btn" onclick="event.stopPropagation();toggleOrderMenu(this)" aria-label="Menyu">⋮</button>
+          <div class="order-menu">
+            <button class="order-menu-item" onclick="event.stopPropagation();closeOrderMenus();startEditOrder(${o.id}, ${o.first_product_id}, ${o.first_price})">✏️ Tahrirlash</button>
+            <button class="order-menu-item danger" onclick="event.stopPropagation();closeOrderMenus();doDeleteOrder(${o.id})">🗑 O'chirish</button>
+          </div>
         </div>
+        <div class="order-name">👤 ${o.name || 'Mijoz'}</div>
+        <div class="order-items">${itemsHtml}</div>
       </div>`;
     });
+    html += '</div>';
     el.innerHTML = html;
   } catch(e) {
     document.getElementById('pageOrders').innerHTML = renderAlert('error', e.message);
@@ -571,6 +895,20 @@ async function loadAktSverka(months) {
     document.getElementById('pageAkt').innerHTML = renderAlert('error', e.message);
   }
 }
+
+// --- Order Menu ---
+function toggleOrderMenu(btn) {
+  const menu = btn.nextElementSibling;
+  const isOpen = menu.classList.contains('show');
+  document.querySelectorAll('.order-menu.show').forEach(m => m.classList.remove('show'));
+  if (!isOpen) menu.classList.add('show');
+}
+function closeOrderMenus() {
+  document.querySelectorAll('.order-menu.show').forEach(m => m.classList.remove('show'));
+}
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('.order-menu, .order-menu-btn')) closeOrderMenus();
+});
 
 // --- Quantity Modal ---
 function openQtyModal(action, callback) {

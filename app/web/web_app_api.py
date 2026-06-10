@@ -360,7 +360,7 @@ async def create_order(req: CreateOrderRequest, auth: dict = Depends(authenticat
     )
 
     if not result or result.get("error"):
-        error = (result or {}).get("error") or (result or {}).get("message", "Noma'lum xatolik")
+        error = (result or {}).get("message") or (result or {}).get("error", "Noma'lum xatolik")
         raise HTTPException(status_code=400, detail=str(error))
 
     return {
@@ -394,7 +394,7 @@ async def edit_order(order_id: int, req: EditOrderRequest, auth: dict = Depends(
     )
 
     if not result or result.get("error"):
-        error = (result or {}).get("error") or (result or {}).get("message", "Noma'lum xatolik")
+        error = (result or {}).get("message") or (result or {}).get("error", "Noma'lum xatolik")
         raise HTTPException(status_code=400, detail=str(error))
 
     return {"success": True, "total": req.price * req.qty}
@@ -408,7 +408,7 @@ async def delete_order(order_id: int, auth: dict = Depends(authenticate_webapp_u
     )
 
     if not result or result.get("error"):
-        error = (result or {}).get("error") or (result or {}).get("message", "Noma'lum xatolik")
+        error = (result or {}).get("message") or (result or {}).get("error", "Noma'lum xatolik")
         raise HTTPException(status_code=400, detail=str(error))
 
     return {"success": True}
@@ -456,15 +456,15 @@ async def get_akt_sverka(months: int = 1, auth: dict = Depends(authenticate_weba
             d_debt = d.get("debt", 0)
             d_credit = d.get("credit", 0)
             details.append({
-                "name": d.get("osnova", "-"),
-                "qty": d.get("qty", "0"),
+                "name": str(d.get("osnova", "-")),
+                "qty": str(d.get("qty", "0")),
                 "summa": d_debt or d_credit,
             })
 
         documents.append({
-            "id": doc.get("id_doc", "?"),
-            "date": doc.get("date_doc", ""),
-            "type": doc.get("type_doc", ""),
+            "id": str(doc.get("id_doc", "?")),
+            "date": str(doc.get("date_doc", "")),
+            "type": str(doc.get("type_doc", "")),
             "direction": direction,
             "debt": doc_debt,
             "credit": doc_credit,
