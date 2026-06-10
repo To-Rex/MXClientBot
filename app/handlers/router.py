@@ -16,11 +16,11 @@ from aiogram.types import (
     Message,
     ReplyKeyboardMarkup,
 )
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import async_sessionmaker, AsyncSession
 
 from app.config import WEBAPP_URL
-from app.models import User, WebSession
+from app.models import CartItem, User, WebSession
 from app.services.api import APIService
 
 SESSION_TTL_HOURS = 24 * 30  # 30 days
@@ -31,8 +31,6 @@ logger = logging.getLogger(__name__)
 _product_msg_ids: dict[int, list[int]] = {}
 # Track akt sverka messages per chat to delete when switching periods
 _akt_msg_ids: dict[int, list[int]] = {}
-# In-memory cart storage: {(bot_id, telegram_id): {product_id: {name, price, qty}}}
-_carts: dict[tuple[int, int], dict[int, dict]] = {}
 
 
 def _main_menu_keyboard() -> ReplyKeyboardMarkup:
@@ -45,27 +43,6 @@ def _main_menu_keyboard() -> ReplyKeyboardMarkup:
         ],
         resize_keyboard=True,
     )
-
-
-def _cart_key(bot_id: int, telegram_id: int) -> tuple[int, int]:
-    return (bot_id, telegram_id)
-
-
-def _get_cart(bot_id: int, telegram_id: int) -> dict[int, dict]:
-    return _carts.setdefault(_cart_key(bot_id, telegram_id), {})
-
-
-def _cart_count(bot_id: int, telegram_id: int) -> int:
-    return len(_carts.get(_cart_key(bot_id, telegram_id), {}))
-
-
-def _cart_total(bot_id: int, telegram_id: int) -> float:
-    cart = _carts.get(_cart_key(bot_id, telegram_id), {})
-    return sum(it["price"] * it["qty"] for it in cart.values())
-
-
-def _cart_clear(bot_id: int, telegram_id: int) -> None:
-    _carts.pop(_cart_key(bot_id, telegram_id), None)
 
 PROFILE_FIELD_LABELS = {
     "name": "Ism",
@@ -183,6 +160,112 @@ def create_router(
 ) -> Router:
     router = Router()
     api_service = APIService()
+
+    bot_id = bot_config["id"]
+
+    async def _cart_items(telegram_id: int) -> list[CartItem]:
+        async with session_factory() as session:
+            result = await session.execute(
+                select(CartItem)
+                .where(
+                    CartItem.bot_id == bot_id,
+                    CartItem.telegram_id == telegram_id,
+                )
+                .order_by(CartItem.created_at, CartItem.id)
+            )
+            return list(result.scalars().all())
+
+    async def _cart_count(telegram_id: int) -> int:
+        items = await _cart_items(telegram_id)
+        return len(items)
+
+    async def _cart_total(telegram_id: int) -> float:
+        items = await _cart_items(telegram_id)
+        return sum(float(it.price) * float(it.qty) for it in items)
+
+    async def _cart_get_item(telegram_id: int, product_id: int) -> Optional[CartItem]:
+        async with session_factory() as session:
+            result = await session.execute(
+                select(CartItem).where(
+                    CartItem.bot_id == bot_id,
+                    CartItem.telegram_id == telegram_id,
+                    CartItem.product_id == product_id,
+                )
+            )
+            return result.scalar_one_or_none()
+
+    async def _cart_upsert(
+        telegram_id: int,
+        product_id: int,
+        name: str,
+        price: float,
+        qty: float,
+        mode: str,
+    ) -> CartItem:
+        async with session_factory() as session:
+            result = await session.execute(
+                select(CartItem).where(
+                    CartItem.bot_id == bot_id,
+                    CartItem.telegram_id == telegram_id,
+                    CartItem.product_id == product_id,
+                )
+            )
+            item = result.scalar_one_or_none()
+            if item:
+                if mode == "edit":
+                    item.qty = qty
+                else:
+                    item.qty = float(item.qty) + qty
+                item.price = price
+                item.product_name = name
+            else:
+                item = CartItem(
+                    bot_id=bot_id,
+                    telegram_id=telegram_id,
+                    product_id=product_id,
+                    product_name=name,
+                    price=price,
+                    qty=qty,
+                )
+                session.add(item)
+            await session.commit()
+            await session.refresh(item)
+            return item
+
+    async def _cart_remove_item(telegram_id: int, product_id: int) -> Optional[CartItem]:
+        async with session_factory() as session:
+            result = await session.execute(
+                select(CartItem).where(
+                    CartItem.bot_id == bot_id,
+                    CartItem.telegram_id == telegram_id,
+                    CartItem.product_id == product_id,
+                )
+            )
+            item = result.scalar_one_or_none()
+            if not item:
+                return None
+            removed_snapshot = CartItem(
+                bot_id=item.bot_id,
+                telegram_id=item.telegram_id,
+                product_id=item.product_id,
+                product_name=item.product_name,
+                price=item.price,
+                qty=item.qty,
+            )
+            await session.delete(item)
+            await session.commit()
+            return removed_snapshot
+
+    async def _cart_clear(telegram_id: int) -> int:
+        async with session_factory() as session:
+            result = await session.execute(
+                delete(CartItem).where(
+                    CartItem.bot_id == bot_id,
+                    CartItem.telegram_id == telegram_id,
+                )
+            )
+            await session.commit()
+            return result.rowcount or 0
 
     @router.message(Command("start"))
     async def start_handler(message: Message, state: FSMContext):
@@ -375,6 +458,7 @@ def create_router(
 
     async def _send_product_batch(chat_id: int, bot, group: dict):
         products = group.get("products", [])
+        group_id = group.get("group_id")
         new_ids = []
 
         for product in products:
@@ -406,7 +490,7 @@ def create_router(
             )
             cart_btn = InlineKeyboardButton(
                 text="➕ Savatga qo'shish",
-                callback_data=f"cadd_{product_id}_{price_val}",
+                callback_data=f"cadd_{group_id}_{product_id}_{price_val}",
             )
             keyboard = InlineKeyboardMarkup(inline_keyboard=[[order_btn], [cart_btn]])
 
@@ -564,19 +648,20 @@ def create_router(
             error = (result or {}).get("error") or (result or {}).get("message", "Noma'lum xatolik")
             await message.answer(f"❌ Buyurtma yuborilmadi: {error}")
 
-    def _format_cart_text(telegram_id: int) -> str:
-        cart = _get_cart(bot_config["id"], telegram_id)
-        if not cart:
+    async def _format_cart_text(telegram_id: int) -> str:
+        items = await _cart_items(telegram_id)
+        if not items:
             return "🛒 <b>Savat bo'sh</b>\n\nMahsulotlar bo'limidan tovar qo'shing."
         lines = ["🛒 <b>Savat</b>\n"]
         total = 0.0
-        for idx, (pid, item) in enumerate(cart.items(), 1):
-            item_sum = item["price"] * item["qty"]
+        for idx, it in enumerate(items, 1):
+            price = float(it.price)
+            qty = float(it.qty)
+            item_sum = price * qty
             total += item_sum
-            qty_str = f"{item['qty']:g}"
             lines.append(
-                f"<b>{idx}.</b> {item['name']}\n"
-                f"   {qty_str} ta × {item['price']:,.0f} = "
+                f"<b>{idx}.</b> {it.product_name}\n"
+                f"   {qty:g} ta × {price:,.0f} = "
                 f"{item_sum:,.0f} UZS".replace(",", " ")
             )
         lines.append("")
@@ -584,24 +669,24 @@ def create_router(
         lines.append(f"<b>Jami: {total:,.0f} UZS</b>".replace(",", " "))
         return "\n".join(lines)
 
-    def _build_cart_keyboard(telegram_id: int) -> Optional[InlineKeyboardMarkup]:
-        cart = _get_cart(bot_config["id"], telegram_id)
-        if not cart:
+    async def _build_cart_keyboard(telegram_id: int) -> Optional[InlineKeyboardMarkup]:
+        items = await _cart_items(telegram_id)
+        if not items:
             return None
         rows = []
-        for pid, item in cart.items():
-            name_short = item["name"]
+        for it in items:
+            name_short = it.product_name
             if len(name_short) > 22:
                 name_short = name_short[:21] + "…"
-            qty_str = f"{item['qty']:g}"
+            qty = float(it.qty)
             rows.append([
                 InlineKeyboardButton(
-                    text=f"✏️ {name_short} ({qty_str} ta)",
-                    callback_data=f"cqty_{pid}",
+                    text=f"✏️ {name_short} ({qty:g} ta)",
+                    callback_data=f"cqty_{it.product_id}",
                 ),
                 InlineKeyboardButton(
                     text="🗑",
-                    callback_data=f"crm_{pid}",
+                    callback_data=f"crm_{it.product_id}",
                 ),
             ])
         rows.append([
@@ -618,9 +703,17 @@ def create_router(
             return
 
         try:
-            _, product_id, price = callback.data.split("_", 2)
-            product_id = int(product_id)
-            price = float(price)
+            parts = callback.data.split("_")
+            if len(parts) == 4:
+                _, group_id_s, product_id_s, price_s = parts
+                group_id = int(group_id_s)
+            elif len(parts) == 3:
+                _, product_id_s, price_s = parts
+                group_id = None
+            else:
+                raise ValueError("Bad callback format")
+            product_id = int(product_id_s)
+            price = float(price_s)
         except (ValueError, IndexError):
             await callback.answer("❌ Xatolik yuz berdi.", show_alert=True)
             return
@@ -630,14 +723,15 @@ def create_router(
         match = re.search(r"<b>(.+?)</b>", caption)
         product_name = match.group(1) if match else "Mahsulot"
 
-        cart = _get_cart(bot_config["id"], callback.from_user.id)
-        existing_qty = cart.get(product_id, {}).get("qty", 0)
+        existing_item = await _cart_get_item(callback.from_user.id, product_id)
+        existing_qty = float(existing_item.qty) if existing_item else 0.0
 
         await state.update_data(
             cart_pid=product_id,
             cart_price=price,
             cart_name=product_name,
             cart_mode="add",
+            cart_group_id=group_id,
         )
         await state.set_state(CartState.waiting_cart_qty)
 
@@ -666,16 +760,15 @@ def create_router(
             await callback.answer("❌ Xatolik yuz berdi.", show_alert=True)
             return
 
-        cart = _get_cart(bot_config["id"], callback.from_user.id)
-        item = cart.get(pid)
+        item = await _cart_get_item(callback.from_user.id, pid)
         if not item:
             await callback.answer("❌ Mahsulot savatda topilmadi.", show_alert=True)
             return
 
         await state.update_data(
             cart_pid=pid,
-            cart_price=item["price"],
-            cart_name=item["name"],
+            cart_price=float(item.price),
+            cart_name=item.product_name,
             cart_mode="edit",
         )
         await state.set_state(CartState.waiting_cart_qty)
@@ -688,8 +781,8 @@ def create_router(
         await callback.answer()
         await callback.message.answer(
             f"✏️ <b>Miqdorni o'zgartirish</b>\n\n"
-            f"Mahsulot: <b>{item['name']}</b>\n"
-            f"Joriy miqdor: {item['qty']:g} ta\n\n"
+            f"Mahsulot: <b>{item.product_name}</b>\n"
+            f"Joriy miqdor: {float(item.qty):g} ta\n\n"
             "Yangi miqdorni raqamda yuboring.",
             reply_markup=keyboard,
         )
@@ -716,27 +809,19 @@ def create_router(
         mode = data.get("cart_mode", "add")
         await state.clear()
 
-        cart = _get_cart(bot_config["id"], message.from_user.id)
-        if mode == "edit":
-            if pid in cart:
-                cart[pid]["qty"] = qty
-                cart[pid]["price"] = price
-                cart[pid]["name"] = name
-            else:
-                cart[pid] = {"name": name, "price": price, "qty": qty}
-            action_text = "✏️ Miqdor yangilandi"
-        else:
-            if pid in cart:
-                cart[pid]["qty"] = cart[pid]["qty"] + qty
-                cart[pid]["price"] = price
-                cart[pid]["name"] = name
-            else:
-                cart[pid] = {"name": name, "price": price, "qty": qty}
-            action_text = "✅ Savatga qo'shildi"
+        saved = await _cart_upsert(
+            telegram_id=message.from_user.id,
+            product_id=pid,
+            name=name,
+            price=price,
+            qty=qty,
+            mode=mode,
+        )
+        action_text = "✏️ Miqdor yangilandi" if mode == "edit" else "✅ Savatga qo'shildi"
 
-        total_count = _cart_count(bot_config["id"], message.from_user.id)
-        cart_total = _cart_total(bot_config["id"], message.from_user.id)
-        new_qty = cart[pid]["qty"]
+        total_count = await _cart_count(message.from_user.id)
+        cart_total = await _cart_total(message.from_user.id)
+        new_qty = float(saved.qty)
 
         await message.answer(
             f"{action_text}\n\n"
@@ -749,6 +834,28 @@ def create_router(
             reply_markup=_main_menu_keyboard(),
         )
 
+        group_id = data.get("cart_group_id")
+        if mode == "add" and group_id is not None:
+            try:
+                products_data = await api_service.get_products(
+                    bot_config["base_url"],
+                    bot_config["one_c_login"],
+                    bot_config["one_c_password"],
+                )
+                if products_data and products_data.get("data"):
+                    group = next(
+                        (g for g in products_data["data"] if g.get("group_id") == group_id),
+                        None,
+                    )
+                    if group:
+                        await _clear_product_messages(message.chat.id, message.bot)
+                        await _send_product_batch(message.chat.id, message.bot, group)
+            except Exception as e:
+                logger.error(
+                    "Failed to re-send products after cart add (bot=%d, group=%s): %s",
+                    bot_config["id"], group_id, e,
+                )
+
     @router.message(F.text == "🛒 Savat")
     async def cart_handler(message: Message):
         user = await _get_user(session_factory, message.from_user.id, bot_config["id"])
@@ -758,8 +865,8 @@ def create_router(
             )
             return
 
-        text = _format_cart_text(message.from_user.id)
-        kb = _build_cart_keyboard(message.from_user.id)
+        text = await _format_cart_text(message.from_user.id)
+        kb = await _build_cart_keyboard(message.from_user.id)
         await message.answer(text, reply_markup=kb)
 
     @router.callback_query(F.data.startswith("crm_"))
@@ -770,15 +877,14 @@ def create_router(
             await callback.answer("❌ Xatolik yuz berdi.", show_alert=True)
             return
 
-        cart = _get_cart(bot_config["id"], callback.from_user.id)
-        item = cart.pop(pid, None)
-        if not item:
+        removed = await _cart_remove_item(callback.from_user.id, pid)
+        if not removed:
             await callback.answer("❌ Mahsulot savatda topilmadi.", show_alert=True)
             return
 
-        await callback.answer(f"🗑 {item['name']} olib tashlandi")
-        text = _format_cart_text(callback.from_user.id)
-        kb = _build_cart_keyboard(callback.from_user.id)
+        await callback.answer(f"🗑 {removed.product_name} olib tashlandi")
+        text = await _format_cart_text(callback.from_user.id)
+        kb = await _build_cart_keyboard(callback.from_user.id)
         try:
             await callback.message.edit_text(text, reply_markup=kb)
         except Exception:
@@ -786,11 +892,10 @@ def create_router(
 
     @router.callback_query(F.data == "cclear")
     async def cart_clear_callback(callback: CallbackQuery):
-        cart = _get_cart(bot_config["id"], callback.from_user.id)
-        if not cart:
+        removed_count = await _cart_clear(callback.from_user.id)
+        if removed_count == 0:
             await callback.answer("Savat allaqachon bo'sh", show_alert=True)
             return
-        _cart_clear(bot_config["id"], callback.from_user.id)
         await callback.answer("🧹 Savat tozalandi")
         try:
             await callback.message.edit_text(
@@ -808,20 +913,21 @@ def create_router(
             await callback.answer("❌ Avval ro'yxatdan o'ting. /start", show_alert=True)
             return
 
-        cart = _get_cart(bot_config["id"], callback.from_user.id)
-        if not cart:
+        items = await _cart_items(callback.from_user.id)
+        if not items:
             await callback.answer("Savat bo'sh", show_alert=True)
             return
 
         await callback.answer("⏳ Buyurtma yuborilmoqda...")
 
-        products = [
+        snapshot = [
             {
-                "product_id": pid,
-                "price": item["price"],
-                "qty": item["qty"],
+                "product_id": it.product_id,
+                "name": it.product_name,
+                "price": float(it.price),
+                "qty": float(it.qty),
             }
-            for pid, item in cart.items()
+            for it in items
         ]
 
         result = await api_service.create_bulk_order(
@@ -829,23 +935,23 @@ def create_router(
             bot_config["one_c_login"],
             bot_config["one_c_password"],
             client_id=int(user.client_id),
-            products=products,
+            products=snapshot,
         )
 
         if result and not result.get("error"):
             order_id = result.get("id", "?")
-            total = sum(it["price"] * it["qty"] for it in cart.values())
+            total = sum(it["price"] * it["qty"] for it in snapshot)
             items_summary_lines = []
-            for pid, item in cart.items():
+            for it in snapshot:
                 items_summary_lines.append(
-                    f"  ▪️ {item['name']} — {item['qty']:g} ta × "
-                    f"{item['price']:,.0f} = {item['price']*item['qty']:,.0f} UZS".replace(",", " ")
+                    f"  ▪️ {it['name']} — {it['qty']:g} ta × "
+                    f"{it['price']:,.0f} = {it['price']*it['qty']:,.0f} UZS".replace(",", " ")
                 )
-            _cart_clear(bot_config["id"], callback.from_user.id)
+            await _cart_clear(callback.from_user.id)
             success_text = (
                 f"✅ <b>Buyurtma qabul qilindi!</b>\n"
                 f"▪️ Buyurtma ID: {order_id}\n"
-                f"▪️ Mahsulotlar: {len(products)} xil\n"
+                f"▪️ Mahsulotlar: {len(snapshot)} xil\n"
                 + "\n".join(items_summary_lines) + "\n\n"
                 f"<b>Jami: {total:,.0f} UZS</b>".replace(",", " ")
             )
