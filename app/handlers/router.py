@@ -33,17 +33,6 @@ _product_msg_ids: dict[int, list[int]] = {}
 _akt_msg_ids: dict[int, list[int]] = {}
 
 
-def _main_menu_keyboard() -> ReplyKeyboardMarkup:
-    return ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text="👤 Profil"), KeyboardButton(text="ℹ️ Info")],
-            [KeyboardButton(text="📦 Mahsulotlar"), KeyboardButton(text="📋 Buyurtmalar")],
-            [KeyboardButton(text="💰 Balans"), KeyboardButton(text="📊 Akt sverka")],
-            [KeyboardButton(text="🛒 Savat"), KeyboardButton(text="✍️ Shikoyat")],
-        ],
-        resize_keyboard=True,
-    )
-
 PROFILE_FIELD_LABELS = {
     "name": "Ism",
     "group": "Guruh",
@@ -267,6 +256,19 @@ def create_router(
             await session.commit()
             return result.rowcount or 0
 
+    async def _main_menu_keyboard(telegram_id: int) -> ReplyKeyboardMarkup:
+        count = await _cart_count(telegram_id)
+        cart_label = f"🛒 Savat ({count})" if count > 0 else "🛒 Savat"
+        return ReplyKeyboardMarkup(
+            keyboard=[
+                [KeyboardButton(text="👤 Profil"), KeyboardButton(text="ℹ️ Info")],
+                [KeyboardButton(text="📦 Mahsulotlar"), KeyboardButton(text="📋 Buyurtmalar")],
+                [KeyboardButton(text="💰 Balans"), KeyboardButton(text="📊 Akt sverka")],
+                [KeyboardButton(text=cart_label), KeyboardButton(text="✍️ Shikoyat")],
+            ],
+            resize_keyboard=True,
+        )
+
     @router.message(Command("start"))
     async def start_handler(message: Message, state: FSMContext):
         await state.clear()
@@ -277,7 +279,7 @@ def create_router(
             await message.answer(
                 f"Assalomu alaykum! {company} botiga xush kelibsiz.\n\n"
                 "Menyudan kerakli bo'limni tanlang:",
-                reply_markup=_main_menu_keyboard(),
+                reply_markup=await _main_menu_keyboard(message.from_user.id),
             )
             return
 
@@ -366,7 +368,7 @@ def create_router(
 
             await message.answer(
                 "✅ Ro'yxatdan muvaffaqiyatli o'tdingiz!",
-                reply_markup=_main_menu_keyboard(),
+                reply_markup=await _main_menu_keyboard(message.from_user.id),
             )
         else:
             await message.answer(
@@ -492,7 +494,8 @@ def create_router(
                 text="➕ Savatga qo'shish",
                 callback_data=f"cadd_{group_id}_{product_id}_{price_val}",
             )
-            keyboard = InlineKeyboardMarkup(inline_keyboard=[[order_btn], [cart_btn]])
+            # Direct-order button hidden — only cart-add visible; order_btn kept for future use
+            keyboard = InlineKeyboardMarkup(inline_keyboard=[[cart_btn]])
 
             images = product.get("img", [])
             if images:
@@ -603,7 +606,7 @@ def create_router(
     @router.message(OrderState.waiting_qty, F.text == "❌ Bekor qilish")
     async def cancel_order_qty(message: Message, state: FSMContext):
         await state.clear()
-        await message.answer("❌ Buyurtma bekor qilindi.", reply_markup=_main_menu_keyboard())
+        await message.answer("❌ Buyurtma bekor qilindi.", reply_markup=await _main_menu_keyboard(message.from_user.id))
 
     @router.message(OrderState.waiting_qty)
     async def process_qty(message: Message, state: FSMContext):
@@ -642,7 +645,7 @@ def create_router(
                 f"▪️ Buyurtma ID: {order_id}\n"
                 f"▪️ Miqdor: {qty:g} ta\n"
                 f"▪️ Jami: {total:,.0f} UZS".replace(",", " "),
-                reply_markup=_main_menu_keyboard(),
+                reply_markup=await _main_menu_keyboard(message.from_user.id),
             )
         else:
             error = (result or {}).get("error") or (result or {}).get("message", "Noma'lum xatolik")
@@ -790,7 +793,7 @@ def create_router(
     @router.message(CartState.waiting_cart_qty, F.text == "❌ Bekor qilish")
     async def cancel_cart_qty(message: Message, state: FSMContext):
         await state.clear()
-        await message.answer("❌ Bekor qilindi.", reply_markup=_main_menu_keyboard())
+        await message.answer("❌ Bekor qilindi.", reply_markup=await _main_menu_keyboard(message.from_user.id))
 
     @router.message(CartState.waiting_cart_qty)
     async def process_cart_qty(message: Message, state: FSMContext):
@@ -831,7 +834,7 @@ def create_router(
             f"<b>Savatda: {total_count} ta tovar | "
             f"{cart_total:,.0f} UZS</b>\n\n".replace(",", " ")
             + "Buyurtma berish uchun «🛒 Savat» menyusiga o'ting.",
-            reply_markup=_main_menu_keyboard(),
+            reply_markup=await _main_menu_keyboard(message.from_user.id),
         )
 
         group_id = data.get("cart_group_id")
@@ -856,7 +859,7 @@ def create_router(
                     bot_config["id"], group_id, e,
                 )
 
-    @router.message(F.text == "🛒 Savat")
+    @router.message(F.text.startswith("🛒 Savat"))
     async def cart_handler(message: Message):
         user = await _get_user(session_factory, message.from_user.id, bot_config["id"])
         if not user or not user.client_id:
@@ -889,6 +892,10 @@ def create_router(
             await callback.message.edit_text(text, reply_markup=kb)
         except Exception:
             await callback.message.answer(text, reply_markup=kb)
+        await callback.message.answer(
+            "🛒 Savat yangilandi.",
+            reply_markup=await _main_menu_keyboard(callback.from_user.id),
+        )
 
     @router.callback_query(F.data == "cclear")
     async def cart_clear_callback(callback: CallbackQuery):
@@ -905,6 +912,10 @@ def create_router(
             await callback.message.answer(
                 "🛒 <b>Savat bo'sh</b>\n\nMahsulotlar bo'limidan tovar qo'shing.",
             )
+        await callback.message.answer(
+            "🧹 Savat tozalandi.",
+            reply_markup=await _main_menu_keyboard(callback.from_user.id),
+        )
 
     @router.callback_query(F.data == "csubmit")
     async def cart_submit_callback(callback: CallbackQuery):
@@ -959,9 +970,16 @@ def create_router(
                 await callback.message.edit_text(success_text)
             except Exception:
                 await callback.message.answer(success_text)
+            await callback.message.answer(
+                "✅ Buyurtma yuborildi.",
+                reply_markup=await _main_menu_keyboard(callback.from_user.id),
+            )
         else:
             error = (result or {}).get("error") or (result or {}).get("message", "Noma'lum xatolik")
-            await callback.message.answer(f"❌ Buyurtma yuborilmadi: {error}")
+            await callback.message.answer(
+                f"❌ Buyurtma yuborilmadi: {error}",
+                reply_markup=await _main_menu_keyboard(callback.from_user.id),
+            )
 
     @router.message(F.text == "📋 Buyurtmalar")
     async def orders_handler(message: Message):
@@ -1173,7 +1191,7 @@ def create_router(
     @router.message(EditOrderState.waiting_edit_qty, F.text == "❌ Bekor qilish")
     async def cancel_edit_qty(message: Message, state: FSMContext):
         await state.clear()
-        await message.answer("❌ Tahrirlash bekor qilindi.", reply_markup=_main_menu_keyboard())
+        await message.answer("❌ Tahrirlash bekor qilindi.", reply_markup=await _main_menu_keyboard(message.from_user.id))
 
     @router.message(EditOrderState.waiting_edit_qty)
     async def process_edit_qty(message: Message, state: FSMContext):
@@ -1196,7 +1214,7 @@ def create_router(
         if not user or not user.client_id:
             await message.answer(
                 "❌ Avval ro'yxatdan o'ting. /start",
-                reply_markup=_main_menu_keyboard(),
+                reply_markup=await _main_menu_keyboard(message.from_user.id),
             )
             return
 
@@ -1204,7 +1222,7 @@ def create_router(
         if not order:
             await message.answer(
                 "❌ Buyurtma topilmadi. Qaytadan urinib ko'ring.",
-                reply_markup=_main_menu_keyboard(),
+                reply_markup=await _main_menu_keyboard(message.from_user.id),
             )
             return
 
@@ -1256,13 +1274,13 @@ def create_router(
                 f"▪️ O'zgartirilgan: {edit_name} — {qty:g} ta\n"
                 f"▪️ Mahsulotlar: {len(products)} xil\n"
                 f"▪️ Jami: {total:,.0f} UZS".replace(",", " "),
-                reply_markup=_main_menu_keyboard(),
+                reply_markup=await _main_menu_keyboard(message.from_user.id),
             )
         else:
             error = (result or {}).get("error") or (result or {}).get("message", "Noma'lum xatolik")
             await message.answer(
                 f"❌ Yangilash amalga oshmadi: {error}",
-                reply_markup=_main_menu_keyboard(),
+                reply_markup=await _main_menu_keyboard(message.from_user.id),
             )
 
     @router.callback_query(F.data.startswith("del_"))
@@ -1417,13 +1435,13 @@ def create_router(
         if result and not result.get("error"):
             await message.answer(
                 "✅ Xabaringiz yuborildi. Rahmat!",
-                reply_markup=_main_menu_keyboard(),
+                reply_markup=await _main_menu_keyboard(message.from_user.id),
             )
         else:
             error = (result or {}).get("message") or (result or {}).get("error", "Noma'lum xatolik")
             await message.answer(
                 f"❌ Xatolik: {error}",
-                reply_markup=_main_menu_keyboard(),
+                reply_markup=await _main_menu_keyboard(message.from_user.id),
             )
 
     @router.message(F.text == "✍️ Shikoyat")
@@ -1448,7 +1466,7 @@ def create_router(
     @router.message(ComplaintState.waiting_note, F.text == "❌ Bekor qilish")
     async def cancel_complaint_note(message: Message, state: FSMContext):
         await state.clear()
-        await message.answer("Bekor qilindi.", reply_markup=_main_menu_keyboard())
+        await message.answer("Bekor qilindi.", reply_markup=await _main_menu_keyboard(message.from_user.id))
 
     @router.message(ComplaintState.waiting_note)
     async def complaint_note_received(message: Message, state: FSMContext):
