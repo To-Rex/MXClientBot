@@ -1376,13 +1376,26 @@ def create_router(
             user.client_id,
         )
 
-        if not data or not data.get("balance"):
+        if not data or data.get("error"):
             await message.answer("❌ Balansni olishda xatolik yuz berdi.")
             return
 
-        balance = data["balance"].strip()
-        is_negative = balance.startswith("-")
-        emoji = "🟢" if is_negative else "🔴"
+        balance = (data.get("balance") or "").strip() or "0 UZS"
+
+        import re
+        match = re.search(r"-?[\d\s.,]+", balance)
+        try:
+            val = float(match.group(0).replace(" ", "").replace(",", ".")) if match else 0.0
+        except ValueError:
+            val = 0.0
+
+        if val == 0:
+            emoji = "⚪️"
+        elif val < 0:
+            emoji = "🟢"
+        else:
+            emoji = "🔴"
+
         await message.answer(
             f"<b>💰 Balans</b>\n\n"
             f"{emoji} Joriy balans: <b>{balance}</b>"
