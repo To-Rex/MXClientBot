@@ -82,9 +82,123 @@ body {
   font-size: 10px; font-weight: 500;
   cursor: pointer;
   transition: color .15s;
+  position: relative;
 }
 .bottom-nav button svg { width: 22px; height: 22px; }
 .bottom-nav button.active { color: var(--tg-link); }
+.cart-badge {
+  position: absolute;
+  top: 4px; right: 22%;
+  min-width: 16px; height: 16px;
+  padding: 0 4px;
+  background: var(--tg-destructive);
+  color: #fff;
+  font-size: 10px; font-weight: 700;
+  border-radius: 10px;
+  display: none;
+  align-items: center; justify-content: center;
+  line-height: 1;
+}
+.cart-badge.show { display: inline-flex; }
+.sidebar-cart-badge {
+  margin-left: auto;
+  min-width: 18px;
+  padding: 0 6px; height: 18px;
+  background: var(--tg-destructive); color: #fff;
+  font-size: 11px; font-weight: 700;
+  border-radius: 10px;
+  display: none;
+  align-items: center; justify-content: center;
+  line-height: 1;
+}
+.sidebar-cart-badge.show { display: inline-flex; }
+
+/* --- Cart --- */
+.cart-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: 12px;
+}
+.cart-grid .cart-item { margin-bottom: 0; }
+.cart-item {
+  background: var(--tg-card-bg);
+  border-radius: 12px; padding: 12px 14px;
+  margin-bottom: 10px;
+  border: 1px solid var(--tg-border);
+}
+.cart-item-name { font-size: 15px; font-weight: 600; margin-bottom: 6px; }
+.cart-item-meta {
+  display: flex; align-items: center; justify-content: space-between;
+  font-size: 13px; color: var(--tg-hint);
+  margin-bottom: 10px;
+}
+.cart-item-meta .ci-sum { color: var(--tg-text); font-weight: 600; }
+.cart-item-actions { display: flex; gap: 8px; }
+.cart-item-actions .btn { flex: 1; }
+.cart-summary {
+  background: var(--tg-card-bg);
+  border: 1px solid var(--tg-border);
+  border-radius: 14px;
+  padding: 14px 16px;
+  margin-top: 20px;
+}
+.cart-summary-total {
+  display: flex; justify-content: space-between; align-items: baseline;
+  font-size: 13px;
+  color: var(--tg-hint);
+  margin-bottom: 12px;
+  letter-spacing: 0.01em;
+}
+.cart-summary-total .cs-amount {
+  color: var(--tg-text);
+  font-size: 19px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+.cart-summary-actions { display: flex; gap: 10px; }
+.cart-summary-actions .btn {
+  flex: 1;
+  padding: 10px 14px;
+  font-size: 13px;
+}
+
+@media (max-width: 767.98px) {
+  .cart-summary {
+    position: sticky;
+    bottom: calc(78px + env(safe-area-inset-bottom));
+  }
+}
+
+@media (min-width: 768px) {
+  .cart-summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 32px;
+    padding: 14px 20px;
+    margin-top: 24px;
+  }
+  .cart-summary-total {
+    margin-bottom: 0;
+    gap: 12px;
+    flex: 0 1 auto;
+  }
+  .cart-summary-total .cs-amount {
+    font-size: 20px;
+    margin-left: 10px;
+  }
+  .cart-summary-actions {
+    flex: 0 0 auto;
+    gap: 10px;
+  }
+  .cart-summary-actions .btn {
+    flex: 0 0 auto;
+    width: auto;
+    min-width: 0;
+    padding: 10px 22px;
+    font-size: 14px;
+  }
+}
 
 .card {
   background: var(--tg-card-bg);
@@ -440,6 +554,7 @@ body {
 
   <div id="pageProfile" class="page active"></div>
   <div id="pageProducts" class="page"></div>
+  <div id="pageCart" class="page"></div>
   <div id="pageOrders" class="page"></div>
   <div id="pageAkt" class="page"></div>
   <div id="pageInfo" class="page"></div>
@@ -454,6 +569,11 @@ body {
     <button onclick="showPage('products')" id="navProducts">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="20" height="15" rx="2"/><path d="M16 7V5a2 2 0 00-2-2h-4a2 2 0 00-2 2v2"/><path d="M2 12h20"/></svg>
       Mahsulotlar
+    </button>
+    <button onclick="showPage('cart')" id="navCart">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 002 1.61h9.72a2 2 0 002-1.61L23 6H6"/></svg>
+      Savat
+      <span class="cart-badge" id="cartBadgeBottom">0</span>
     </button>
     <button onclick="showPage('orders')" id="navOrders">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
@@ -485,6 +605,11 @@ body {
       <button class="sidebar-nav-item" data-page="products" onclick="showPage('products')">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="20" height="15" rx="2"/><path d="M16 7V5a2 2 0 00-2-2h-4a2 2 0 00-2 2v2"/><path d="M2 12h20"/></svg>
         <span>Mahsulotlar</span>
+      </button>
+      <button class="sidebar-nav-item" data-page="cart" onclick="showPage('cart')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 002 1.61h9.72a2 2 0 002-1.61L23 6H6"/></svg>
+        <span>Savat</span>
+        <span class="sidebar-cart-badge" id="cartBadgeSide">0</span>
       </button>
       <button class="sidebar-nav-item" data-page="orders" onclick="showPage('orders')">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
@@ -604,6 +729,7 @@ function loadPage(name) {
   switch(name) {
     case 'profile': loadProfile(); break;
     case 'products': loadProductGroups(); break;
+    case 'cart': loadCart(); break;
     case 'orders': loadOrders(); break;
     case 'akt': loadAktSverka(); break;
     case 'info': loadInfo(); break;
@@ -817,12 +943,16 @@ async function loadProductsByGroup(groupId, groupName) {
       const imgHtml = p.images.length > 0
         ? `<img src="${p.images[0]}" alt="${p.name}" loading="lazy" onerror="this.parentElement.querySelector('.product-image-placeholder').style.display='flex';this.style.display='none'"><div class="product-image-placeholder" style="display:none">Rasm mavjud emas</div>`
         : '<div class="product-image-placeholder">Rasm mavjud emas</div>';
+      const safeName = p.name.replace(/'/g, "\\'");
       html += `<div class="product-card">
         ${imgHtml}
         <div class="pc-body">
           <div class="pc-name">${statusIcon} ${p.name}</div>
           <div class="pc-meta">💰 ${formatNum(p.price)} ${p.currency}${p.qty ? '<br>📦 Qoldiq: ' + p.qty + ' ta' : ''}</div>
-          <button class="btn btn-primary btn-sm" onclick="startOrder(${p.id}, ${p.price}, '${p.name.replace(/'/g, "\\'")}')" style="width:auto">🛒 Buyurtma berish</button>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button class="btn btn-primary btn-sm" onclick="startOrder(${p.id}, ${p.price}, '${safeName}')" style="width:auto">🛒 Buyurtma berish</button>
+            <button class="btn btn-outline btn-sm" onclick="addToCart(${p.id}, ${p.price}, '${safeName}')" style="width:auto">➕ Savatga qo'shish</button>
+          </div>
         </div>
       </div>`;
     });
@@ -842,6 +972,142 @@ function startOrder(productId, price, name) {
       showPage('orders');
     } catch(e) { showNotification('❌ ' + e.message, 'error'); }
   });
+}
+
+// --- Cart ---
+function addToCart(productId, price, name) {
+  openQtyModal(`Savatga qo'shish — ${name}`, async (qty) => {
+    try {
+      const result = await apiCall('POST', '/cart', {
+        product_id: productId,
+        name: name,
+        price: price,
+        qty: parseFloat(qty),
+        mode: 'add',
+      });
+      updateCartBadge(result.count);
+      showNotification(`✅ Savatga qo'shildi: ${name} — ${qty} ta`, 'success');
+    } catch(e) { showNotification('❌ ' + e.message, 'error'); }
+  });
+}
+
+async function loadCart() {
+  renderLoader('Cart');
+  try {
+    const data = await apiCall('GET', '/cart');
+    updateCartBadge(data.count);
+    const el = document.getElementById('pageCart');
+    if (!data.items || data.items.length === 0) {
+      el.innerHTML = `<div class="empty">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/>
+          <path d="M1 1h4l2.68 13.39a2 2 0 002 1.61h9.72a2 2 0 002-1.61L23 6H6"/>
+        </svg>
+        <p>Savat bo'sh</p>
+        <p style="font-size:13px;margin-top:6px">Mahsulotlar bo'limidan tovar qo'shing</p>
+      </div>`;
+      return;
+    }
+    let html = `<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+      <h3 style="font-size:18px;font-weight:700">🛒 Savat</h3>
+      <span style="font-size:13px;color:var(--tg-hint);background:var(--tg-secondary-bg);padding:4px 10px;border-radius:8px">${data.count} ta tovar</span>
+    </div><div class="cart-grid">`;
+    data.items.forEach(it => {
+      const safeName = it.name.replace(/'/g, "\\'");
+      html += `<div class="cart-item">
+        <div class="cart-item-name">${it.name}</div>
+        <div class="cart-item-meta">
+          <span>${formatNum(it.qty)} ta × ${formatNum(it.price)} UZS</span>
+          <span class="ci-sum">${formatNum(it.sum)} UZS</span>
+        </div>
+        <div class="cart-item-actions">
+          <button class="btn btn-outline btn-sm" onclick="cartEditQty(${it.product_id}, ${it.price}, '${safeName}', ${it.qty})">✏️ Miqdor</button>
+          <button class="btn btn-danger btn-sm" onclick="cartRemoveItem(${it.product_id}, '${safeName}')">🗑 O'chirish</button>
+        </div>
+      </div>`;
+    });
+    html += `</div><div class="cart-summary">
+      <div class="cart-summary-total">
+        <span>Jami:</span>
+        <span class="cs-amount">${formatNum(data.total)} UZS</span>
+      </div>
+      <div class="cart-summary-actions">
+        <button class="btn btn-outline" onclick="cartClearAll()">🧹 Tozalash</button>
+        <button class="btn btn-primary" onclick="cartCheckout()">✅ Buyurtma berish</button>
+      </div>
+    </div>`;
+    el.innerHTML = html;
+  } catch(e) {
+    document.getElementById('pageCart').innerHTML = renderAlert('error', e.message);
+  }
+}
+
+function cartEditQty(productId, price, name, currentQty) {
+  openQtyModal(`✏️ Miqdor (joriy: ${currentQty} ta) — ${name}`, async (qty) => {
+    try {
+      const result = await apiCall('POST', '/cart', {
+        product_id: productId,
+        name: name,
+        price: price,
+        qty: parseFloat(qty),
+        mode: 'edit',
+      });
+      updateCartBadge(result.count);
+      showNotification(`✅ Miqdor yangilandi: ${qty} ta`, 'success');
+      loadCart();
+    } catch(e) { showNotification('❌ ' + e.message, 'error'); }
+  });
+}
+
+async function cartRemoveItem(productId, name) {
+  if (!confirm(`"${name}" — savatdan o'chirilsinmi?`)) return;
+  try {
+    const result = await apiCall('DELETE', `/cart/${productId}`);
+    updateCartBadge(result.count);
+    showNotification('🗑 Savatdan olib tashlandi', 'success');
+    loadCart();
+  } catch(e) { showNotification('❌ ' + e.message, 'error'); }
+}
+
+async function cartClearAll() {
+  if (!confirm('Butun savatni tozalashni xohlaysizmi?')) return;
+  try {
+    await apiCall('DELETE', '/cart');
+    updateCartBadge(0);
+    showNotification('🧹 Savat tozalandi', 'success');
+    loadCart();
+  } catch(e) { showNotification('❌ ' + e.message, 'error'); }
+}
+
+async function cartCheckout() {
+  if (!confirm('Buyurtma berishni tasdiqlaysizmi?')) return;
+  try {
+    const result = await apiCall('POST', '/cart/checkout');
+    updateCartBadge(0);
+    showNotification(`✅ Buyurtma qabul qilindi! ID: ${result.order_id} | Jami: ${formatNum(result.total)} UZS`, 'success');
+    showPage('orders');
+  } catch(e) { showNotification('❌ ' + e.message, 'error'); }
+}
+
+function updateCartBadge(count) {
+  const n = Number(count) || 0;
+  const bottom = document.getElementById('cartBadgeBottom');
+  const side = document.getElementById('cartBadgeSide');
+  if (bottom) {
+    bottom.textContent = n > 99 ? '99+' : String(n);
+    bottom.classList.toggle('show', n > 0);
+  }
+  if (side) {
+    side.textContent = n > 99 ? '99+' : String(n);
+    side.classList.toggle('show', n > 0);
+  }
+}
+
+async function refreshCartBadge() {
+  try {
+    const data = await apiCall('GET', '/cart');
+    updateCartBadge(data.count);
+  } catch(e) { /* ignore */ }
 }
 
 // --- Orders ---
@@ -982,6 +1248,7 @@ async function init() {
 
     if (userData.registered) {
       showPage('profile');
+      refreshCartBadge();
     } else {
       showPage('register');
     }

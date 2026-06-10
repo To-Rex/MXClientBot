@@ -7,10 +7,10 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import delete, select
 
 from app.database import async_session
-from app.models import User
+from app.models import CartItem, User
 from app.services.api import APIService
 from app.web.web_app_auth import authenticate_webapp_user
 
@@ -522,4 +522,187 @@ async def get_balance(auth: dict = Depends(authenticate_webapp_user)):
     return {
         "balance": data.get("balance", "0 UZS"),
         "client_id": user.client_id,
+    }
+
+
+def _serialize_cart_item(it: CartItem) -> dict:
+    price = float(it.price)
+    qty = float(it.qty)
+    return {
+        "product_id": it.product_id,
+        "name": it.product_name,
+        "price": price,
+        "qty": qty,
+        "sum": price * qty,
+    }
+
+
+async def _cart_list_items(bot_id: int, telegram_id: int) -> list[CartItem]:
+    async with async_session() as session:
+        result = await session.execute(
+            select(CartItem)
+            .where(
+                CartItem.bot_id == bot_id,
+                CartItem.telegram_id == telegram_id,
+            )
+            .order_by(CartItem.created_at, CartItem.id)
+        )
+        return list(result.scalars().all())
+
+
+def _cart_summary(items: list[CartItem]) -> dict:
+    serialized = [_serialize_cart_item(it) for it in items]
+    total = sum(it["sum"] for it in serialized)
+    count = len(serialized)
+    return {"items": serialized, "count": count, "total": total}
+
+
+@router.get("/cart")
+async def get_cart(auth: dict = Depends(authenticate_webapp_user)):
+    user = await _get_user(auth["telegram_id"], auth["bot_id"])
+    if not user or not user.client_id:
+        raise HTTPException(status_code=400, detail="Avval ro'yxatdan o'ting")
+    items = await _cart_list_items(auth["bot_id"], auth["telegram_id"])
+    return _cart_summary(items)
+
+
+class CartAddRequest(BaseModel):
+    product_id: int
+    name: str
+    price: float
+    qty: float
+    mode: str = "add"  # "add" → accumulate, "edit" → replace
+
+
+@router.post("/cart")
+async def cart_add(req: CartAddRequest, auth: dict = Depends(authenticate_webapp_user)):
+    if req.qty <= 0:
+        raise HTTPException(status_code=400, detail="Miqdor musbat bo'lishi kerak")
+    if req.mode not in ("add", "edit"):
+        raise HTTPException(status_code=400, detail="mode 'add' yoki 'edit' bo'lishi kerak")
+
+    user = await _get_user(auth["telegram_id"], auth["bot_id"])
+    if not user or not user.client_id:
+        raise HTTPException(status_code=400, detail="Avval ro'yxatdan o'ting")
+
+    async with async_session() as session:
+        result = await session.execute(
+            select(CartItem).where(
+                CartItem.bot_id == auth["bot_id"],
+                CartItem.telegram_id == auth["telegram_id"],
+                CartItem.product_id == req.product_id,
+            )
+        )
+        item = result.scalar_one_or_none()
+        if item:
+            if req.mode == "edit":
+                item.qty = req.qty
+            else:
+                item.qty = float(item.qty) + req.qty
+            item.price = req.price
+            item.product_name = req.name
+        else:
+            item = CartItem(
+                bot_id=auth["bot_id"],
+                telegram_id=auth["telegram_id"],
+                product_id=req.product_id,
+                product_name=req.name,
+                price=req.price,
+                qty=req.qty,
+            )
+            session.add(item)
+        await session.commit()
+
+    items = await _cart_list_items(auth["bot_id"], auth["telegram_id"])
+    summary = _cart_summary(items)
+    summary["success"] = True
+    return summary
+
+
+@router.delete("/cart/{product_id}")
+async def cart_remove(product_id: int, auth: dict = Depends(authenticate_webapp_user)):
+    user = await _get_user(auth["telegram_id"], auth["bot_id"])
+    if not user or not user.client_id:
+        raise HTTPException(status_code=400, detail="Avval ro'yxatdan o'ting")
+
+    async with async_session() as session:
+        result = await session.execute(
+            select(CartItem).where(
+                CartItem.bot_id == auth["bot_id"],
+                CartItem.telegram_id == auth["telegram_id"],
+                CartItem.product_id == product_id,
+            )
+        )
+        item = result.scalar_one_or_none()
+        if not item:
+            raise HTTPException(status_code=404, detail="Mahsulot savatda topilmadi")
+        await session.delete(item)
+        await session.commit()
+
+    items = await _cart_list_items(auth["bot_id"], auth["telegram_id"])
+    summary = _cart_summary(items)
+    summary["success"] = True
+    return summary
+
+
+@router.delete("/cart")
+async def cart_clear(auth: dict = Depends(authenticate_webapp_user)):
+    user = await _get_user(auth["telegram_id"], auth["bot_id"])
+    if not user or not user.client_id:
+        raise HTTPException(status_code=400, detail="Avval ro'yxatdan o'ting")
+
+    async with async_session() as session:
+        result = await session.execute(
+            delete(CartItem).where(
+                CartItem.bot_id == auth["bot_id"],
+                CartItem.telegram_id == auth["telegram_id"],
+            )
+        )
+        await session.commit()
+        removed = result.rowcount or 0
+
+    return {"success": True, "removed": removed, "items": [], "count": 0, "total": 0}
+
+
+@router.post("/cart/checkout")
+async def cart_checkout(auth: dict = Depends(authenticate_webapp_user)):
+    user = await _get_user(auth["telegram_id"], auth["bot_id"])
+    if not user or not user.client_id:
+        raise HTTPException(status_code=400, detail="Avval ro'yxatdan o'ting")
+
+    items = await _cart_list_items(auth["bot_id"], auth["telegram_id"])
+    if not items:
+        raise HTTPException(status_code=400, detail="Savat bo'sh")
+
+    snapshot = [_serialize_cart_item(it) for it in items]
+
+    cfg = auth["bot_config"]
+    result = await api_service.create_bulk_order(
+        cfg["base_url"], cfg["one_c_login"], cfg["one_c_password"],
+        client_id=int(user.client_id),
+        products=[
+            {"product_id": s["product_id"], "price": s["price"], "qty": s["qty"]}
+            for s in snapshot
+        ],
+    )
+
+    if not result or result.get("error"):
+        error = (result or {}).get("message") or (result or {}).get("error", "Noma'lum xatolik")
+        raise HTTPException(status_code=400, detail=str(error))
+
+    async with async_session() as session:
+        await session.execute(
+            delete(CartItem).where(
+                CartItem.bot_id == auth["bot_id"],
+                CartItem.telegram_id == auth["telegram_id"],
+            )
+        )
+        await session.commit()
+
+    total = sum(s["sum"] for s in snapshot)
+    return {
+        "success": True,
+        "order_id": result.get("id", "?"),
+        "items": snapshot,
+        "total": total,
     }
