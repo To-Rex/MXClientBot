@@ -88,6 +88,7 @@ class BotManager:
             await bot.set_my_commands([
                 BotCommand(command="start", description="Botni boshlash"),
                 BotCommand(command="getsession", description="Brauzer uchun havola olish"),
+                BotCommand(command="logout", description="Tizimdan chiqish"),
             ])
         except Exception as e:
             logger.warning("Failed to set commands for bot %d: %s", bot_record.id, e)

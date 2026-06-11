@@ -256,6 +256,31 @@ def create_router(
             await session.commit()
             return result.rowcount or 0
 
+    async def _logout_user(telegram_id: int):
+        async with session_factory() as session:
+            stmt = select(User).where(
+                User.telegram_id == telegram_id,
+                User.bot_id == bot_config["id"],
+            )
+            result = await session.execute(stmt)
+            user = result.scalar_one_or_none()
+            if user:
+                user.client_id = None
+                user.phone_number = None
+            await session.execute(
+                delete(WebSession).where(
+                    WebSession.telegram_id == telegram_id,
+                    WebSession.bot_id == bot_config["id"],
+                )
+            )
+            await session.execute(
+                delete(CartItem).where(
+                    CartItem.telegram_id == telegram_id,
+                    CartItem.bot_id == bot_config["id"],
+                )
+            )
+            await session.commit()
+
     async def _main_menu_keyboard(telegram_id: int) -> ReplyKeyboardMarkup:
         count = await _cart_count(telegram_id)
         cart_label = f"🛒 Savat ({count})" if count > 0 else "🛒 Savat"
@@ -265,6 +290,7 @@ def create_router(
                 [KeyboardButton(text="📦 Mahsulotlar"), KeyboardButton(text="📋 Buyurtmalar")],
                 [KeyboardButton(text="💰 Balans"), KeyboardButton(text="📊 Akt sverka")],
                 [KeyboardButton(text=cart_label), KeyboardButton(text="✍️ Shikoyat")],
+                [KeyboardButton(text="🚪 Chiqish")],
             ],
             resize_keyboard=True,
         )
@@ -330,6 +356,38 @@ def create_router(
             disable_web_page_preview=True,
         )
 
+    @router.message(Command("logout"))
+    async def logout_command_handler(message: Message):
+        await _logout_user(message.from_user.id)
+        keyboard = ReplyKeyboardMarkup(
+            keyboard=[
+                [KeyboardButton(text="📱 Telefon raqamni yuborish", request_contact=True)]
+            ],
+            resize_keyboard=True,
+            one_time_keyboard=True,
+        )
+        await message.answer(
+            "Siz tizimdan chiqdingiz.\n\n"
+            "Iltimos, qaytadan ro'yxatdan o'tish uchun telefon raqamingizni yuboring.",
+            reply_markup=keyboard,
+        )
+
+    @router.message(F.text == "🚪 Chiqish")
+    async def logout_button_handler(message: Message):
+        await _logout_user(message.from_user.id)
+        keyboard = ReplyKeyboardMarkup(
+            keyboard=[
+                [KeyboardButton(text="📱 Telefon raqamni yuborish", request_contact=True)]
+            ],
+            resize_keyboard=True,
+            one_time_keyboard=True,
+        )
+        await message.answer(
+            "Siz tizimdan chiqdingiz.\n\n"
+            "Iltimos, qaytadan ro'yxatdan o'tish uchun telefon raqamingizni yuboring.",
+            reply_markup=keyboard,
+        )
+
     @router.message(F.contact)
     async def contact_handler(message: Message):
         if message.contact is None:
@@ -347,6 +405,7 @@ def create_router(
             bot_config["one_c_login"],
             bot_config["one_c_password"],
             phone,
+            str(message.chat.id),
         )
 
         logger.info(

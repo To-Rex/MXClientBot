@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 class APIService:
     @staticmethod
     async def register_device(
-        base_url: str, login: str, password: str, phone_number: str
+        base_url: str, login: str, password: str, phone_number: str, chat_id: str
     ) -> Optional[dict]:
         url = f"{base_url.rstrip('/')}/hs/client/api/device"
         credentials = base64.b64encode(f"{login}:{password}".encode()).decode()
@@ -22,7 +22,7 @@ class APIService:
             phone_int = int(phone_number)
         except ValueError:
             phone_int = phone_number
-        payload = {"phone_number": phone_int}
+        payload = {"phone_number": phone_int, "chat_id": chat_id}
 
         logger.info(
             "📡 register_device REQUEST\n"

@@ -10,7 +10,7 @@ from pydantic import BaseModel
 from sqlalchemy import delete, select
 
 from app.database import async_session
-from app.models import CartItem, User
+from app.models import CartItem, User, WebSession
 from app.services.api import APIService
 from app.web.web_app_auth import authenticate_webapp_user
 
@@ -79,7 +79,7 @@ async def register_device(req: RegisterRequest, auth: dict = Depends(authenticat
 
     cfg = auth["bot_config"]
     result = await api_service.register_device(
-        cfg["base_url"], cfg["one_c_login"], cfg["one_c_password"], phone,
+        cfg["base_url"], cfg["one_c_login"], cfg["one_c_password"], phone, str(auth["telegram_id"]),
     )
 
     if not result or not result.get("id"):
@@ -89,6 +89,34 @@ async def register_device(req: RegisterRequest, auth: dict = Depends(authenticat
     await _save_user(auth["telegram_id"], auth["bot_id"], phone, client_id)
 
     return {"success": True, "client_id": client_id}
+
+
+@router.post("/logout")
+async def logout(auth: dict = Depends(authenticate_webapp_user)):
+    async with async_session() as session:
+        stmt = select(User).where(
+            User.telegram_id == auth["telegram_id"],
+            User.bot_id == auth["bot_id"],
+        )
+        result = await session.execute(stmt)
+        user = result.scalar_one_or_none()
+        if user:
+            user.client_id = None
+            user.phone_number = None
+        await session.execute(
+            delete(WebSession).where(
+                WebSession.telegram_id == auth["telegram_id"],
+                WebSession.bot_id == auth["bot_id"],
+            )
+        )
+        await session.execute(
+            delete(CartItem).where(
+                CartItem.telegram_id == auth["telegram_id"],
+                CartItem.bot_id == auth["bot_id"],
+            )
+        )
+        await session.commit()
+    return {"success": True}
 
 
 @router.get("/profile")

@@ -326,6 +326,7 @@ body {
 .btn-primary { background: var(--tg-button); color: var(--tg-button-text); }
 .btn-outline { background: transparent; color: var(--tg-link); border: 1px solid var(--tg-link); }
 .btn-danger { background: var(--tg-destructive); color: #fff; }
+.btn-logout { background: transparent; color: var(--tg-destructive); border: 1px solid var(--tg-destructive); }
 .btn-sm { padding: 6px 12px; font-size: 13px; width: auto; border-radius: 8px; }
 .btn-row { display: flex; gap: 8px; margin-top: 10px; }
 .btn-row .btn { flex: 1; }
@@ -796,6 +797,18 @@ async function doRegister() {
     errEl.textContent = e.message; errEl.style.display = 'block';
   }
 }
+  
+async function doLogout() {
+  try {
+    await apiCall('POST', '/logout');
+    currentUser.registered = false;
+    currentUser.client_id = null;
+    currentUser.phone_number = null;
+    showPage('register');
+  } catch(e) {
+    alert(e.message || 'Chiqishda xatolik');
+  }
+}
 
 // --- Profile ---
 async function loadProfile() {
@@ -934,7 +947,11 @@ async function loadProductsByGroup(groupId, groupName) {
     </div>`;
     if (!data.products || data.products.length === 0) {
       html += '<div class="empty">Bu guruhda mahsulotlar yo\'q</div>';
-      el.innerHTML = html;
+    html += `<div class="profile-section">
+      <button class="btn btn-logout" onclick="doLogout()">🚪 Chiqish</button>
+    </div>`;
+
+    el.innerHTML = html;
       return;
     }
     html += '<div class="product-grid">';
