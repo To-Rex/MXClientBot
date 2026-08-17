@@ -106,7 +106,13 @@ class BotManager:
             except Exception as e:
                 logger.warning("Failed to set WebApp menu button for bot %d: %s", bot_record.id, e)
 
-        task = asyncio.create_task(dp.start_polling(bot))
+        task = asyncio.create_task(
+            dp.start_polling(
+                bot,
+                allowed_updates=dp.resolve_used_update_types(),
+                handle_signals=False,
+            )
+        )
 
         self._instances[bot_record.id] = BotInstance(bot=bot, dp=dp, task=task)
         logger.info("Started bot %d (%s)", bot_record.id, bot_record.name)

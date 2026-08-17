@@ -3,7 +3,6 @@ from datetime import datetime, timedelta
 from typing import Optional
 from urllib.parse import quote, urlparse
 
-import httpx
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
 from pydantic import BaseModel
@@ -12,6 +11,7 @@ from sqlalchemy import delete, select
 from app.database import async_session
 from app.models import CartItem, User, WebSession
 from app.services.api import APIService
+from app.services.http_client import get_http_client
 from app.web.web_app_auth import authenticate_webapp_user
 
 logger = logging.getLogger(__name__)
@@ -306,9 +306,8 @@ async def image_proxy(url: str):
         raise HTTPException(status_code=400, detail="Yaroqsiz URL")
 
     try:
-        async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
-            upstream = await client.get(url)
-            upstream.raise_for_status()
+        upstream = await get_http_client().get(url, follow_redirects=True)
+        upstream.raise_for_status()
     except Exception as e:
         logger.error("❌ image_proxy FAILED for %s: %s", url, e)
         raise HTTPException(status_code=502, detail="Rasm yuklanmadi")

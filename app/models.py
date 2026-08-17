@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import BigInteger, Boolean, Column, DateTime, Float, ForeignKey, Integer, String
+from sqlalchemy import BigInteger, Boolean, Column, DateTime, Float, ForeignKey, Index, Integer, String
 from sqlalchemy.orm import DeclarativeBase, relationship
 
 
@@ -31,6 +31,9 @@ class Bot(Base):
 
 class User(Base):
     __tablename__ = "users"
+    __table_args__ = (
+        Index("ix_users_bot_id_telegram_id", "bot_id", "telegram_id"),
+    )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     telegram_id = Column(BigInteger, nullable=False)
@@ -49,6 +52,9 @@ class User(Base):
 
 class WebSession(Base):
     __tablename__ = "web_sessions"
+    __table_args__ = (
+        Index("ix_web_sessions_bot_id_telegram_id", "bot_id", "telegram_id"),
+    )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     token = Column(String, nullable=False, unique=True, index=True)
@@ -63,6 +69,9 @@ class WebSession(Base):
 
 class CartItem(Base):
     __tablename__ = "cart_items"
+    __table_args__ = (
+        Index("ix_cart_items_bot_id_telegram_id_product_id", "bot_id", "telegram_id", "product_id"),
+    )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     bot_id = Column(Integer, ForeignKey("bots.id"), nullable=False, index=True)

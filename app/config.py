@@ -30,3 +30,15 @@ HOST = os.getenv("HOST", "0.0.0.0")
 PORT = int(os.getenv("PORT", "8000"))
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 WEBAPP_URL = os.getenv("WEBAPP_URL", "")
+AUTH_API_BASE = os.getenv(
+    "AUTH_API_BASE",
+    "https://tashqisavdo-tashqi-savda-backend-dykybk-722d50-85-17-200-46.sslip.io/api/v1",
+).rstrip("/")
+SESSION_SECRET_KEY = os.getenv("SESSION_SECRET_KEY", "mx-bot-secret-key-change-in-production")
+
+# Mahsulot katalogi keshi (soniya). 0 = kesh o'chirilgan.
+# Buyurtma yaratish/tahrirlash/o'chirishda kesh avtomatik tozalanadi.
+try:
+    PRODUCTS_CACHE_TTL = int(os.getenv("PRODUCTS_CACHE_TTL", "30"))
+except ValueError:
+    PRODUCTS_CACHE_TTL = 30

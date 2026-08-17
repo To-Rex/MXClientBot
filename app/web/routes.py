@@ -51,12 +51,11 @@ async def index(request: Request):
         result = await session.execute(select(Bot).order_by(Bot.created_at.desc()))
         bots = result.scalars().all()
 
-        user_counts = {}
-        for bot in bots:
-            count_result = await session.execute(
-                select(func.count(User.id)).where(User.bot_id == bot.id)
-            )
-            user_counts[bot.id] = count_result.scalar()
+        count_rows = await session.execute(
+            select(User.bot_id, func.count(User.id)).group_by(User.bot_id)
+        )
+        counts_by_bot = dict(count_rows.all())
+        user_counts = {bot.id: counts_by_bot.get(bot.id, 0) for bot in bots}
 
     bm = _bot_manager(request)
     return _render(request, "index.html", {

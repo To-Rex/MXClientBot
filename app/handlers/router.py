@@ -16,7 +16,7 @@ from aiogram.types import (
     Message,
     ReplyKeyboardMarkup,
 )
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import async_sessionmaker, AsyncSession
 
 from app.config import WEBAPP_URL
@@ -165,12 +165,24 @@ def create_router(
             return list(result.scalars().all())
 
     async def _cart_count(telegram_id: int) -> int:
-        items = await _cart_items(telegram_id)
-        return len(items)
+        async with session_factory() as session:
+            result = await session.execute(
+                select(func.count(CartItem.id)).where(
+                    CartItem.bot_id == bot_id,
+                    CartItem.telegram_id == telegram_id,
+                )
+            )
+            return int(result.scalar() or 0)
 
     async def _cart_total(telegram_id: int) -> float:
-        items = await _cart_items(telegram_id)
-        return sum(float(it.price) * float(it.qty) for it in items)
+        async with session_factory() as session:
+            result = await session.execute(
+                select(func.coalesce(func.sum(CartItem.price * CartItem.qty), 0.0)).where(
+                    CartItem.bot_id == bot_id,
+                    CartItem.telegram_id == telegram_id,
+                )
+            )
+            return float(result.scalar() or 0.0)
 
     async def _cart_get_item(telegram_id: int, product_id: int) -> Optional[CartItem]:
         async with session_factory() as session:

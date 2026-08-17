@@ -7,10 +7,11 @@ from fastapi.responses import HTMLResponse
 from jinja2 import Environment, FileSystemLoader
 from starlette.middleware.sessions import SessionMiddleware
 
-from app.config import HOST, LOG_LEVEL, PORT
+from app.config import HOST, LOG_LEVEL, PORT, SESSION_SECRET_KEY
 from app.database import async_session, engine
 from app.models import Base
 from app.services.bot_manager import BotManager
+from app.services.http_client import close_http_client
 from app.web.auth import AuthMiddleware, router as auth_router
 from app.web.routes import router as web_router
 from app.web.web_app_api import router as webapp_api_router
@@ -26,12 +27,17 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        # create_all skips indexes on pre-existing tables — add them explicitly
+        for table in Base.metadata.tables.values():
+            for index in table.indexes:
+                await conn.run_sync(lambda sync_conn, idx=index: idx.create(sync_conn, checkfirst=True))
 
     bot_manager = BotManager(async_session)
     app.state.bot_manager = bot_manager
     app.state.jinja_env = Environment(
         loader=FileSystemLoader(Path(__file__).parent / "templates"),
         autoescape=True,
+        auto_reload=False,  # templates are static in production — skip stat() per render
     )
 
     await bot_manager.start_all()
@@ -40,6 +46,7 @@ async def lifespan(app: FastAPI):
     yield
 
     await bot_manager.stop_all()
+    await close_http_client()
     await engine.dispose()
     logger.info("Application stopped")
 
@@ -47,7 +54,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="Telegram Multi Bot Manager", lifespan=lifespan)
 
 app.add_middleware(AuthMiddleware)
-app.add_middleware(SessionMiddleware, secret_key="mx-bot-secret-key-change-in-production")
+app.add_middleware(SessionMiddleware, secret_key=SESSION_SECRET_KEY)
 
 app.include_router(auth_router)
 app.include_router(web_router)
