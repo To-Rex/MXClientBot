@@ -35,7 +35,17 @@ class APIService:
     async def register_device(
         base_url: str, login: str, password: str, phone_number: str, chat_id: str
     ) -> Optional[dict]:
-        url = f"{base_url.rstrip('/')}/hs/client/api/device"
+        """Check/register a client by phone number.
+
+        Primary endpoint: POST /hs/client_bot/api/checkNumber
+            body:     {"phoneNumber": <int>, "chatID": "<str>"}
+            response: {"id": <int>, "name": "<str>"}
+
+        Legacy fallback (only if the new endpoint is missing → 404):
+            POST /hs/client/api/device  {"phone_number": <int>, "chat_id": "<str>"}
+        Both return a dict with "id" on success, so callers are unchanged.
+        """
+        root = base_url.rstrip("/")
         credentials = _basic_auth(login, password)
         headers = {
             "Authorization": f"Basic {credentials}",
@@ -45,43 +55,52 @@ class APIService:
             phone_int = int(phone_number)
         except ValueError:
             phone_int = phone_number
-        payload = {"phone_number": phone_int, "chat_id": chat_id}
 
-        logger.info(
-            "📡 register_device REQUEST\n"
-            "   URL: %s\n"
-            "   Auth: Basic %s (login=%s, pass=%s)\n"
-            "   Body: %s",
-            url, credentials, login, "*" * len(password) if password else "<empty>", payload,
-        )
+        attempts = [
+            (f"{root}/hs/client_bot/api/checkNumber", {"phoneNumber": phone_int, "chatID": str(chat_id)}),
+            (f"{root}/hs/client/api/device", {"phone_number": phone_int, "chat_id": chat_id}),
+        ]
 
         client = get_http_client()
-        try:
-            response = await client.post(url, json=payload, headers=headers)
+        for idx, (url, payload) in enumerate(attempts):
             logger.info(
-                "📡 register_device RESPONSE\n"
-                "   Status: %s %s\n"
-                "   Headers: %s\n"
-                "   Body: %s",
-                response.status_code, response.reason_phrase,
-                dict(response.headers),
-                response.text[:2000],
-            )
-            response.raise_for_status()
-            return response.json()
-        except httpx.HTTPStatusError as e:
-            logger.error(
-                "❌ register_device FAILED\n"
+                "📡 register_device REQUEST\n"
                 "   URL: %s\n"
-                "   Status: %s\n"
-                "   Response: %s",
-                url, e.response.status_code, e.response.text[:1000],
+                "   Auth: Basic %s (login=%s, pass=%s)\n"
+                "   Body: %s",
+                url, credentials, login, "*" * len(password) if password else "<empty>", payload,
             )
-            try: return e.response.json()
-            except Exception: return None
-        except Exception as e:
-            logger.error("❌ register_device EXCEPTION for %s: %s", url, e)
-            return None
+            try:
+                response = await client.post(url, json=payload, headers=headers)
+                logger.info(
+                    "📡 register_device RESPONSE\n"
+                    "   Status: %s %s\n"
+                    "   Headers: %s\n"
+                    "   Body: %s",
+                    response.status_code, response.reason_phrase,
+                    dict(response.headers),
+                    response.text[:2000],
+                )
+                response.raise_for_status()
+                return response.json()
+            except httpx.HTTPStatusError as e:
+                logger.error(
+                    "❌ register_device FAILED\n"
+                    "   URL: %s\n"
+                    "   Status: %s\n"
+                    "   Response: %s",
+                    url, e.response.status_code, e.response.text[:1000],
+                )
+                # New endpoint absent on this 1C base → try legacy endpoint once
+                if e.response.status_code == 404 and idx + 1 < len(attempts):
+                    logger.warning("register_device: checkNumber not found, falling back to legacy /device")
+                    continue
+                try: return e.response.json()
+                except Exception: return None
+            except Exception as e:
+                logger.error("❌ register_device EXCEPTION for %s: %s", url, e)
+                return None
+        return None
 
     @staticmethod
     async def get_client_info(

@@ -130,7 +130,7 @@ Access at `http://localhost:8000/panel` (login required)
 
 ### User Flow
 1. **`/start`** → Send phone number (contact button)
-2. **Registration** → Calls `POST /hs/client/api/device` with phone
+2. **Registration** → Calls `POST /hs/client_bot/api/checkNumber` with phone (`{"phoneNumber", "chatID"}` → `{"id", "name"}`)
 3. **Profile** → Calls `GET /hs/agent/api/get_client_info` — client details with images
 4. **Info** → Company info, branch, group, agent, status
 5. **Products** → Browse by category, image + price + stock per product
@@ -152,7 +152,7 @@ Access at `http://localhost:8000/panel` (login required)
 #### 1C Endpoints (per-bot credentials)
 | Endpoint | Method | Purpose |
 |----------|--------|---------|
-| `/hs/client/api/device` | POST | Register client by phone |
+| `/hs/client_bot/api/checkNumber` | POST | Check/register client by phone → `{id, name}` |
 | `/hs/agent/api/get_client_info` | GET | Get client details |
 | `/hs/client/api/Getproductsbygroup` | GET | Product catalog by groups |
 | `/hs/client/api/CreateOrder` | POST | Create new order |
