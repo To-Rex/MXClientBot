@@ -2,1326 +2,785 @@
 <html lang="uz">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-<title>MX Client Bot</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<title>MX Nasiya — Шахсий кабинет</title>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <style>
+/* ─────────────────────────────────────────────────────────────────────
+   Tokens.  Base surfaces follow the Telegram theme; brand + status colors
+   are ours: deep teal (calm money), mint (paid), amber (soon), coral (late).
+   ───────────────────────────────────────────────────────────────────── */
 :root {
-  --tg-bg: #1c1c1e;
-  --tg-text: #ffffff;
-  --tg-hint: #98989e;
-  --tg-link: #007aff;
-  --tg-button: #007aff;
-  --tg-button-text: #ffffff;
-  --tg-secondary-bg: #2c2c2e;
-  --tg-section-bg: #2c2c2e;
-  --tg-section-header: #98989e;
-  --tg-destructive: #ff3b30;
-  --tg-accent: #30d158;
-  --tg-card-bg: #2c2c2e;
-  --tg-border: #3a3a3c;
-  --tg-status-green: #30d158;
-  --tg-status-red: #ff3b30;
-  --tg-status-yellow: #ffcc00;
+  --bg: #0f1115; --surface: #181b21; --surface-2: #20242c; --line: #2a2f38;
+  --text: #f3f4f6; --muted: #9aa3b2; --faint: #6b7280;
+  --brand: #14b8a6; --brand-ink: #0b0f14; --brand-soft: rgba(20,184,166,.14);
+  --paid: #34d399; --soon: #fbbf24; --late: #fb7185; --link: #60a5fa;
+  --paid-soft: rgba(52,211,153,.14); --soon-soft: rgba(251,191,36,.16); --late-soft: rgba(251,113,133,.16);
+  --shadow: 0 1px 2px rgba(0,0,0,.35), 0 8px 24px -12px rgba(0,0,0,.6);
+  --r: 18px; --r-sm: 12px; --tap: 48px;
+  --ease: cubic-bezier(.22,.61,.36,1); --spring: cubic-bezier(.34,1.4,.64,1);
 }
-.light {
-  --tg-bg: #ffffff;
-  --tg-text: #000000;
-  --tg-hint: #8e8e93;
-  --tg-link: #007aff;
-  --tg-button: #007aff;
-  --tg-button-text: #ffffff;
-  --tg-secondary-bg: #f2f2f7;
-  --tg-section-bg: #f2f2f7;
-  --tg-section-header: #6d6d72;
-  --tg-destructive: #ff3b30;
-  --tg-accent: #34c759;
-  --tg-card-bg: #ffffff;
-  --tg-border: #e5e5ea;
-  --tg-status-green: #34c759;
-  --tg-status-red: #ff3b30;
-  --tg-status-yellow: #ffcc00;
+body.light {
+  --bg: #f4f6f8; --surface: #ffffff; --surface-2: #f0f3f6; --line: #e5e9ef;
+  --text: #0f172a; --muted: #5b6472; --faint: #94a3b8;
+  --brand: #0f766e; --brand-ink: #ffffff; --brand-soft: rgba(15,118,110,.10);
+  --paid: #059669; --soon: #b45309; --late: #dc2626; --link: #2563eb;
+  --paid-soft: rgba(5,150,105,.10); --soon-soft: rgba(180,83,9,.12); --late-soft: rgba(220,38,38,.10);
+  --shadow: 0 1px 2px rgba(15,23,42,.06), 0 10px 30px -14px rgba(15,23,42,.18);
 }
-* { margin: 0; padding: 0; box-sizing: border-box; }
+* { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+html { -webkit-text-size-adjust: 100%; }
 body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  background: var(--tg-bg);
-  color: var(--tg-text);
-  min-height: 100vh;
-  padding-bottom: 70px;
-  -webkit-tap-highlight-color: transparent;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  background: var(--bg); color: var(--text); font-size: 15px; line-height: 1.45;
+  min-height: 100dvh; padding-bottom: calc(76px + env(safe-area-inset-bottom)); overflow-x: hidden;
+  transition: background .25s var(--ease), color .25s var(--ease);
 }
-.header {
-  position: sticky; top: 0; z-index: 100;
-  background: var(--tg-secondary-bg);
-  padding: 12px 16px;
-  display: flex; align-items: center; gap: 12px;
-  border-bottom: 1px solid var(--tg-border);
-  backdrop-filter: blur(12px);
-}
-.header h1 { font-size: 18px; font-weight: 600; flex: 1; }
-.header .user-info { font-size: 13px; color: var(--tg-hint); }
+button, input, select, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 3px solid var(--brand); outline-offset: 2px; border-radius: 8px; }
+.num { font-variant-numeric: tabular-nums lining-nums; letter-spacing: -.01em; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
 
-.page { display: none; padding: 16px; animation: fadeIn .2s ease; }
-.page.active { display: block; }
-@keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+/* ── shell ─────────────────────────────────────────────────────────── */
+.top {
+  position: sticky; top: 0; z-index: 30; display: flex; align-items: center; gap: 12px;
+  padding: calc(10px + env(safe-area-inset-top)) 18px 10px;
+  background: color-mix(in srgb, var(--bg) 82%, transparent); backdrop-filter: saturate(160%) blur(14px); -webkit-backdrop-filter: saturate(160%) blur(14px);
+  border-bottom: 1px solid var(--line);
+}
+.brand { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; }
+.brand .mark { width: 34px; height: 34px; border-radius: 11px; background: var(--brand); color: var(--brand-ink); display: grid; place-items: center; font-weight: 800; font-size: 13px; letter-spacing: .02em; flex-shrink: 0; }
+.brand h1 { font-size: 16px; font-weight: 700; letter-spacing: -.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.brand small { display: block; font-size: 11px; color: var(--muted); font-weight: 500; }
+.pill { font-size: 11px; font-weight: 700; padding: 4px 8px; border-radius: 999px; background: var(--soon-soft); color: var(--soon); letter-spacing: .04em; }
+.top .id { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
 
-.bottom-nav {
-  position: fixed; bottom: 0; left: 0; right: 0;
-  background: var(--tg-secondary-bg);
-  display: flex;
-  border-top: 1px solid var(--tg-border);
-  z-index: 100;
-  padding-bottom: env(safe-area-inset-bottom);
+.tabbar {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 30; display: grid; grid-template-columns: repeat(5, 1fr);
+  padding: 6px 8px calc(6px + env(safe-area-inset-bottom));
+  background: color-mix(in srgb, var(--surface) 88%, transparent); backdrop-filter: saturate(160%) blur(16px); -webkit-backdrop-filter: saturate(160%) blur(16px);
+  border-top: 1px solid var(--line);
 }
-.bottom-nav button {
-  flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px;
-  padding: 8px 4px;
-  border: none; background: none;
-  color: var(--tg-hint);
-  font-size: 10px; font-weight: 500;
-  cursor: pointer;
-  transition: color .15s;
-  position: relative;
+.tabbar button {
+  position: relative; border: 0; background: none; color: var(--muted); font-size: 11px; font-weight: 600;
+  min-height: 52px; border-radius: 14px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+  transition: color .2s var(--ease), transform .2s var(--spring);
 }
-.bottom-nav button svg { width: 22px; height: 22px; }
-.bottom-nav button.active { color: var(--tg-link); }
-.cart-badge {
-  position: absolute;
-  top: 4px; right: 22%;
-  min-width: 16px; height: 16px;
-  padding: 0 4px;
-  background: var(--tg-destructive);
-  color: #fff;
-  font-size: 10px; font-weight: 700;
-  border-radius: 10px;
-  display: none;
-  align-items: center; justify-content: center;
-  line-height: 1;
-}
-.cart-badge.show { display: inline-flex; }
-.sidebar-cart-badge {
-  margin-left: auto;
-  min-width: 18px;
-  padding: 0 6px; height: 18px;
-  background: var(--tg-destructive); color: #fff;
-  font-size: 11px; font-weight: 700;
-  border-radius: 10px;
-  display: none;
-  align-items: center; justify-content: center;
-  line-height: 1;
-}
-.sidebar-cart-badge.show { display: inline-flex; }
+.tabbar button svg { width: 24px; height: 24px; stroke: currentColor; fill: none; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; transition: transform .25s var(--spring); }
+.tabbar button.active { color: var(--brand); }
+.tabbar button.active svg { transform: translateY(-1px) scale(1.06); }
+.tabbar button.active::before { content: ""; position: absolute; top: 2px; width: 22px; height: 3px; border-radius: 3px; background: var(--brand); animation: pop .3s var(--spring); }
+.tabbar button:active { transform: scale(.94); }
+.tabbar button.pay { color: var(--brand-ink); }
+.tabbar button.pay .fab { width: 46px; height: 46px; border-radius: 16px; background: var(--brand); display: grid; place-items: center; box-shadow: 0 8px 20px -6px color-mix(in srgb, var(--brand) 70%, transparent); transform: translateY(-10px); transition: transform .25s var(--spring); }
+.tabbar button.pay .fab { color: #fff; }
+.tabbar button.pay .fab svg { stroke: #fff; width: 24px; height: 24px; }
+.tabbar button.pay span:not(.fab) { color: var(--muted); margin-top: -8px; }
+.tabbar button.pay.active span { color: var(--brand); }
+.tabbar button.pay.active::before { display: none; }
+.tabbar button.pay:active .fab { transform: translateY(-10px) scale(.94); }
 
-/* --- Cart --- */
-.cart-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
-  gap: 12px;
-}
-.cart-grid .cart-item { margin-bottom: 0; }
-.cart-item {
-  background: var(--tg-card-bg);
-  border-radius: 12px; padding: 12px 14px;
-  margin-bottom: 10px;
-  border: 1px solid var(--tg-border);
-}
-.cart-item-name { font-size: 15px; font-weight: 600; margin-bottom: 6px; }
-.cart-item-meta {
-  display: flex; align-items: center; justify-content: space-between;
-  font-size: 13px; color: var(--tg-hint);
-  margin-bottom: 10px;
-}
-.cart-item-meta .ci-sum { color: var(--tg-text); font-weight: 600; }
-.cart-item-actions { display: flex; gap: 8px; }
-.cart-item-actions .btn { flex: 1; }
-.cart-summary {
-  background: var(--tg-card-bg);
-  border: 1px solid var(--tg-border);
-  border-radius: 14px;
-  padding: 14px 16px;
-  margin-top: 20px;
-}
-.cart-summary-total {
-  display: flex; justify-content: space-between; align-items: baseline;
-  font-size: 13px;
-  color: var(--tg-hint);
-  margin-bottom: 12px;
-  letter-spacing: 0.01em;
-}
-.cart-summary-total .cs-amount {
-  color: var(--tg-text);
-  font-size: 19px;
-  font-weight: 700;
-  letter-spacing: -0.01em;
-}
-.cart-summary-actions { display: flex; gap: 10px; }
-.cart-summary-actions .btn {
-  flex: 1;
-  padding: 10px 14px;
-  font-size: 13px;
+.rail { display: none; }
+@media (min-width: 900px) {
+  body { padding-bottom: 32px; }
+  .tabbar { display: none; }
+  .rail { display: flex; flex-direction: column; gap: 4px; position: fixed; left: 0; top: 0; bottom: 0; width: 248px; padding: 20px 14px; background: var(--surface); border-right: 1px solid var(--line); z-index: 40; }
+  .rail .brand { flex: 0 0 auto; padding: 4px 8px 18px; }
+  .rail button { display: flex; align-items: center; gap: 12px; border: 0; background: none; color: var(--muted); padding: 11px 12px; border-radius: 12px; font-size: 14px; font-weight: 600; text-align: left; transition: background .15s, color .15s, transform .15s var(--spring); }
+  .rail button svg { width: 20px; height: 20px; stroke: currentColor; fill: none; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+  .rail button:hover { background: var(--surface-2); color: var(--text); }
+  .rail button.active { background: var(--brand-soft); color: var(--brand); }
+  .rail .spacer { flex: 1; }
+  .rail .out { color: var(--late); }
+  .top, .view { margin-left: 248px; }
 }
 
-@media (max-width: 767.98px) {
-  .cart-summary {
-    position: sticky;
-    bottom: calc(78px + env(safe-area-inset-bottom));
-  }
-}
+.view { display: none; padding: 16px 16px 24px; max-width: 720px; margin-inline: auto; min-width: 0; }
+.tile .n, .hero .big, .kv .v { overflow-wrap: anywhere; }
+.view.active { display: block; animation: enter .32s var(--ease) both; }
+@keyframes enter { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+@keyframes pop { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+@keyframes rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+.stagger > * { animation: rise .4s var(--ease) both; }
+.stagger > *:nth-child(1){animation-delay:.02s}.stagger > *:nth-child(2){animation-delay:.07s}.stagger > *:nth-child(3){animation-delay:.12s}.stagger > *:nth-child(4){animation-delay:.17s}.stagger > *:nth-child(5){animation-delay:.22s}.stagger > *:nth-child(6){animation-delay:.27s}.stagger > *:nth-child(n+7){animation-delay:.3s}
 
-@media (min-width: 768px) {
-  .cart-summary {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 32px;
-    padding: 14px 20px;
-    margin-top: 24px;
-  }
-  .cart-summary-total {
-    margin-bottom: 0;
-    gap: 12px;
-    flex: 0 1 auto;
-  }
-  .cart-summary-total .cs-amount {
-    font-size: 20px;
-    margin-left: 10px;
-  }
-  .cart-summary-actions {
-    flex: 0 0 auto;
-    gap: 10px;
-  }
-  .cart-summary-actions .btn {
-    flex: 0 0 auto;
-    width: auto;
-    min-width: 0;
-    padding: 10px 22px;
-    font-size: 14px;
-  }
-}
+/* ── components ────────────────────────────────────────────────────── */
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 16px; margin-bottom: 12px; box-shadow: var(--shadow); }
+.card.tap { cursor: pointer; transition: transform .18s var(--spring), border-color .18s; }
+.card.tap:hover { border-color: color-mix(in srgb, var(--brand) 40%, var(--line)); }
+.card.tap:active { transform: scale(.985); }
+h2.t { font-size: 20px; font-weight: 800; letter-spacing: -.02em; margin: 4px 0 12px; }
+h3.t { font-size: 15px; font-weight: 700; margin-bottom: 10px; }
+.eyebrow { font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.kv { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding: 9px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
+.kv:last-child { border-bottom: 0; }
+.kv .k { color: var(--muted); }
+.kv .v { font-weight: 600; text-align: right; }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px; }
+.tile { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 14px; box-shadow: var(--shadow); }
+.tile .l { font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+.tile .n { font-size: 18px; font-weight: 800; letter-spacing: -.02em; }
+.tile.paid .n { color: var(--paid); } .tile.late .n { color: var(--late); }
+.tag { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; border-radius: 999px; font-size: 12px; font-weight: 700; }
+.tag::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+.tag.active, .tag.pending { background: var(--brand-soft); color: var(--brand); }
+.tag.overdue { background: var(--late-soft); color: var(--late); }
+.tag.closed, .tag.paid { background: var(--paid-soft); color: var(--paid); }
+.bar { height: 8px; border-radius: 6px; background: var(--surface-2); overflow: hidden; margin: 10px 0 6px; }
+.bar > i { display: block; height: 100%; border-radius: 6px; background: linear-gradient(90deg, var(--brand), var(--paid)); width: 0; transition: width .9s var(--ease); }
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; width: 100%; min-height: var(--tap); padding: 12px 18px; border: 0; border-radius: 14px; font-size: 15px; font-weight: 700; transition: transform .15s var(--spring), filter .15s, opacity .2s; }
+.btn:active { transform: scale(.97); }
+.btn svg { width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex-shrink: 0; }
+.btn:disabled { opacity: .45; pointer-events: none; }
+.btn.primary { background: var(--brand); color: var(--brand-ink); box-shadow: 0 8px 22px -10px color-mix(in srgb, var(--brand) 80%, transparent); }
+.btn.primary:hover { filter: brightness(1.06); }
+.btn.ghost { background: var(--surface-2); color: var(--text); }
+.btn.line { background: transparent; color: var(--text); border: 1.5px solid var(--line); }
+.btn.danger { background: transparent; color: var(--late); border: 1.5px solid color-mix(in srgb, var(--late) 40%, transparent); }
+.btn.sm { min-height: 38px; padding: 8px 14px; font-size: 13px; width: auto; border-radius: 11px; }
+.btns { display: flex; gap: 10px; margin-top: 12px; }
+.btns .btn { flex: 1; }
+.chips { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; margin-bottom: 12px; scrollbar-width: none; }
+.chips::-webkit-scrollbar { display: none; }
+.chip { flex-shrink: 0; min-height: 36px; padding: 6px 14px; border-radius: 999px; border: 1.5px solid var(--line); background: var(--surface); color: var(--muted); font-size: 13px; font-weight: 600; transition: all .18s var(--ease); }
+.chip.active { background: var(--text); color: var(--bg); border-color: var(--text); }
+.field { margin-bottom: 12px; }
+.field label { display: block; font-size: 12px; font-weight: 600; color: var(--muted); margin-bottom: 6px; }
+.input { width: 100%; min-height: var(--tap); padding: 12px 14px; border-radius: 14px; border: 1.5px solid var(--line); background: var(--surface-2); font-size: 16px; transition: border-color .15s, box-shadow .15s; }
+.input:focus { outline: none; border-color: var(--brand); box-shadow: 0 0 0 4px var(--brand-soft); }
+textarea.input { min-height: 110px; resize: vertical; }
+.note { padding: 11px 13px; border-radius: var(--r-sm); font-size: 13px; line-height: 1.45; margin-bottom: 10px; display: flex; gap: 8px; align-items: flex-start; }
+.note.err { background: var(--late-soft); color: var(--late); } .note.ok { background: var(--paid-soft); color: var(--paid); }
+.note.info { background: var(--brand-soft); color: var(--brand); } .note.warn { background: var(--soon-soft); color: var(--soon); }
+.empty { text-align: center; padding: 48px 20px; color: var(--muted); }
+.empty .em { font-size: 40px; margin-bottom: 8px; }
+.empty b { display: block; color: var(--text); font-size: 16px; margin-bottom: 4px; }
+.back { display: inline-flex; align-items: center; gap: 6px; min-height: 40px; padding: 0 6px 0 2px; border: 0; background: none; color: var(--brand); font-weight: 600; font-size: 14px; margin-bottom: 6px; border-radius: 10px; }
+.back svg { width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 2.2; }
+.toast { position: fixed; left: 50%; bottom: calc(92px + env(safe-area-inset-bottom)); transform: translateX(-50%) translateY(20px); z-index: 99; padding: 12px 18px; border-radius: 14px; font-size: 14px; font-weight: 600; color: #fff; background: #0f172a; box-shadow: 0 12px 30px -8px rgba(0,0,0,.5); opacity: 0; transition: all .3s var(--spring); max-width: 92vw; text-align: center; }
+.toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+.toast.err { background: var(--late); }
+@media (min-width: 900px) { .toast { bottom: 28px; } }
 
-.card {
-  background: var(--tg-card-bg);
-  border-radius: 12px; padding: 14px;
-  margin-bottom: 10px;
-  border: 1px solid var(--tg-border);
-}
-.card h3 { font-size: 16px; margin-bottom: 8px; }
-.card p { font-size: 14px; color: var(--tg-hint); line-height: 1.5; }
-.card-row { display: flex; justify-content: space-between; align-items: center; padding: 6px 0; }
-.card-row .label { font-size: 14px; color: var(--tg-hint); }
-.card-row .value { font-size: 14px; font-weight: 500; }
+/* skeleton */
+.sk { position: relative; overflow: hidden; background: var(--surface-2); border-radius: 10px; }
+.sk::after { content: ""; position: absolute; inset: 0; transform: translateX(-100%); background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--text) 8%, transparent), transparent); animation: shimmer 1.3s infinite; }
+@keyframes shimmer { to { transform: translateX(100%); } }
+.sk-card { border-radius: var(--r); padding: 16px; background: var(--surface); border: 1px solid var(--line); margin-bottom: 12px; }
+.sk-line { height: 12px; margin-bottom: 10px; }
 
-.fields { display: flex; flex-direction: column; gap: 6px; }
-.field-item { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--tg-border); font-size: 14px; }
-.field-item:last-child { border-bottom: none; }
-.field-item .flabel { color: var(--tg-hint); }
+/* hero: debt ring (signature) */
+.hero { background: var(--surface); border: 1px solid var(--line); border-radius: 22px; padding: 18px 16px; margin-bottom: 12px; box-shadow: var(--shadow); display: grid; grid-template-columns: 132px 1fr; gap: 14px; align-items: center; position: relative; overflow: hidden; }
+.hero::before { content: ""; position: absolute; inset: -40% auto auto -20%; width: 260px; height: 260px; border-radius: 50%; background: radial-gradient(closest-side, var(--brand-soft), transparent 70%); pointer-events: none; }
+.ring { position: relative; width: 132px; height: 132px; }
+.ring svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+.ring circle { fill: none; stroke-width: 10; stroke-linecap: round; }
+.ring .track { stroke: var(--surface-2); }
+.ring .fill { stroke: var(--brand); stroke-dasharray: 339.3; stroke-dashoffset: 339.3; transition: stroke-dashoffset 1.2s var(--ease); }
+.ring .fill.late { stroke: var(--late); }
+.ring .c { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; }
+.ring .c b { display: block; font-size: 22px; font-weight: 800; letter-spacing: -.02em; }
+.ring .c small { font-size: 11px; color: var(--muted); font-weight: 600; }
+.hero .info .eyebrow { margin-bottom: 4px; }
+.hero .big { font-size: 26px; font-weight: 800; letter-spacing: -.03em; line-height: 1.1; margin-bottom: 8px; }
+.hero .next { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; border-radius: 10px; font-size: 12.5px; font-weight: 600; background: var(--brand-soft); color: var(--brand); }
+.hero .next.late { background: var(--late-soft); color: var(--late); }
+.hero .next.ok { background: var(--paid-soft); color: var(--paid); }
+@media (max-width: 360px) { .hero { grid-template-columns: 1fr; text-align: center; } .ring { margin-inline: auto; } }
 
-/* --- Profile --- */
-.profile-avatar {
-  width: 56px; height: 56px; border-radius: 50%;
-  background: var(--tg-button);
-  display: flex; align-items: center; justify-content: center;
-  font-size: 22px; font-weight: 700; color: #fff;
-  flex-shrink: 0;
-}
-.profile-head {
-  display: flex; align-items: center; gap: 14px;
-  padding: 0 0 16px;
-}
-.profile-head-info { flex: 1; min-width: 0; }
-.profile-head-info h2 { font-size: 18px; font-weight: 700; line-height: 1.3; }
-.profile-head-info .sub { font-size: 12px; color: var(--tg-hint); margin-top: 1px; }
-.profile-section { margin-bottom: 16px; }
-.profile-section-title {
-  font-size: 11px; font-weight: 600; text-transform: uppercase;
-  letter-spacing: 0.06em; color: var(--tg-hint);
-  margin-bottom: 8px;
-  opacity: 0.6;
-}
-.profile-card {
-  background: var(--tg-card-bg);
-  border-radius: 14px;
-  padding: 4px 0;
-  border: 1px solid var(--tg-border);
-  overflow: hidden;
-}
-.profile-field {
-  display: flex; align-items: center; gap: 12px;
-  padding: 11px 14px;
-  border-bottom: 1px solid var(--tg-border);
-}
-.profile-field:last-child { border-bottom: none; }
-.profile-field-icon {
-  width: 28px; height: 28px; border-radius: 8px;
-  background: var(--tg-secondary-bg);
-  display: flex; align-items: center; justify-content: center;
-  font-size: 13px; flex-shrink: 0;
-}
-.profile-field-content { flex: 1; min-width: 0; }
-.profile-field-content .pf-label { font-size: 11px; color: var(--tg-hint); margin-bottom: 1px; }
-.profile-field-content .pf-value { font-size: 14px; font-weight: 500; word-break: break-word; }
-.gallery {
-  display: flex; gap: 8px; overflow-x: auto; padding: 4px 0; scroll-snap-type: x mandatory;
-  -webkit-overflow-scrolling: touch;
-}
-.gallery::-webkit-scrollbar { display: none; }
-.gallery img {
-  width: 180px; height: 180px; object-fit: cover; border-radius: 12px; flex-shrink: 0;
-  scroll-snap-align: start;
-}
+/* timeline schedule (signature 2) */
+.tl { position: relative; padding-left: 26px; }
+.tl::before { content: ""; position: absolute; left: 8px; top: 8px; bottom: 8px; width: 2px; background: var(--line); border-radius: 2px; }
+.tl .it { position: relative; padding: 8px 0 8px 6px; display: flex; align-items: center; gap: 10px; }
+.tl .it + .it { border-top: 1px solid var(--line); }
+.tl .dot { position: absolute; left: -23px; top: 50%; width: 12px; height: 12px; margin-top: -6px; border-radius: 50%; background: var(--surface); border: 2.5px solid var(--faint); }
+.tl .it.paid .dot { background: var(--paid); border-color: var(--paid); }
+.tl .it.overdue .dot { background: var(--late); border-color: var(--late); box-shadow: 0 0 0 4px var(--late-soft); }
+.tl .it.next .dot { border-color: var(--brand); box-shadow: 0 0 0 4px var(--brand-soft); animation: pulse 1.8s infinite; }
+@keyframes pulse { 0%,100% { box-shadow: 0 0 0 4px var(--brand-soft);} 50% { box-shadow: 0 0 0 8px transparent;} }
+.tl .d { flex: 1; min-width: 0; }
+.tl .d b { display: block; font-size: 14px; }
+.tl .d small { display: block; font-size: 12px; color: var(--muted); }
+.tl .a { font-weight: 800; white-space: nowrap; }
+.tl .it.paid .a { color: var(--paid); } .tl .it.overdue .a { color: var(--late); }
 
-.product-card {
-  background: var(--tg-card-bg);
-  border-radius: 14px;
-  overflow: hidden;
-  border: 1px solid var(--tg-border);
-}
-.product-card img { width: 100%; height: 200px; object-fit: cover; display: block; }
-.product-card .pc-body { padding: 14px; }
-.product-card .pc-name { font-size: 15px; font-weight: 600; margin-bottom: 4px; }
-.product-card .pc-meta { font-size: 13px; color: var(--tg-hint); margin-bottom: 10px; line-height: 1.4; }
-.product-card .pc-status { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 4px; }
-.product-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-  gap: 12px;
-}
-.product-grid .product-card { margin-bottom: 0; }
-.group-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-  gap: 12px;
-}
-.group-tile {
-  background: var(--tg-card-bg);
-  border: 1px solid var(--tg-border);
-  border-radius: 16px;
-  padding: 20px 14px;
-  text-align: center;
-  cursor: pointer;
-  transition: transform .1s;
-}
-.group-tile:active { transform: scale(0.96); }
-.group-tile .gt-icon {
-  width: 48px; height: 48px; border-radius: 14px;
-  background: var(--tg-secondary-bg);
-  display: flex; align-items: center; justify-content: center;
-  font-size: 22px; margin: 0 auto 10px;
-}
-.group-tile .gt-name { font-size: 14px; font-weight: 600; margin-bottom: 4px; }
-.group-tile .gt-count { font-size: 12px; color: var(--tg-hint); }
-.status-green { background: var(--tg-status-green); }
-.status-red { background: var(--tg-status-red); }
-.status-yellow { background: var(--tg-status-yellow); }
+/* pay flow */
+.steps { display: flex; align-items: center; gap: 6px; margin: 2px 0 14px; }
+.steps span { flex: 1; height: 4px; border-radius: 4px; background: var(--surface-2); transition: background .3s; }
+.steps span.on { background: var(--brand); }
+.opt { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 56px; padding: 12px 14px; border-radius: 14px; border: 1.5px solid var(--line); background: var(--surface-2); margin-bottom: 8px; cursor: pointer; transition: all .18s var(--ease); }
+.opt:hover { border-color: color-mix(in srgb, var(--brand) 45%, var(--line)); }
+.opt.sel { border-color: var(--brand); background: var(--brand-soft); }
+.opt .l b { display: block; font-size: 14px; } .opt .l small { color: var(--muted); font-size: 12px; }
+.opt .a { font-weight: 800; white-space: nowrap; }
+.opt .chk { width: 22px; height: 22px; border-radius: 50%; border: 2px solid var(--line); display: grid; place-items: center; flex-shrink: 0; transition: all .18s; }
+.opt.sel .chk { background: var(--brand); border-color: var(--brand); color: var(--brand-ink); }
+.opt .chk svg { width: 13px; height: 13px; stroke: currentColor; fill: none; stroke-width: 3; opacity: 0; }
+.opt.sel .chk svg { opacity: 1; }
+.pm { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 8px 0 12px; }
+.pm button { min-height: 76px; border-radius: 16px; border: 1.5px solid var(--line); background: var(--surface-2); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; font-weight: 700; font-size: 13px; transition: all .18s var(--ease); }
+.pm button .logo { width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; color: #fff; font-weight: 800; font-size: 13px; }
+.pm button.sel { border-color: var(--pm-color); background: color-mix(in srgb, var(--pm-color) 12%, var(--surface)); transform: translateY(-2px); }
+.receipt { position: relative; background: var(--surface-2); border-radius: 14px; padding: 14px 16px; font-variant-numeric: tabular-nums; }
+.receipt::after { content: ""; position: absolute; left: 0; right: 0; bottom: -6px; height: 12px; background: radial-gradient(circle, var(--bg) 4px, transparent 5px) 0 0/16px 12px repeat-x; }
+.receipt .kv { padding: 7px 0; }
+.check { width: 72px; height: 72px; border-radius: 50%; background: var(--paid-soft); color: var(--paid); display: grid; place-items: center; margin: 4px auto 12px; animation: pop2 .5s var(--spring); }
+.check svg { width: 36px; height: 36px; stroke: currentColor; fill: none; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 40; stroke-dashoffset: 40; animation: draw .5s .2s var(--ease) forwards; }
+@keyframes pop2 { from { transform: scale(.6); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes draw { to { stroke-dashoffset: 0; } }
+.menu .card { display: flex; align-items: center; gap: 14px; padding: 14px 16px; }
+.menu .em { width: 42px; height: 42px; border-radius: 13px; background: var(--surface-2); display: grid; place-items: center; font-size: 20px; flex-shrink: 0; }
+.menu .t { flex: 1; min-width: 0; } .menu .t b { display: block; font-size: 15px; } .menu .t small { color: var(--muted); font-size: 12.5px; }
+.menu .arr { color: var(--faint); }
+.promo { border-left: 4px solid var(--brand); }
+.promo.promo-promo { border-left-color: var(--soon); } .promo.promo-new { border-left-color: var(--paid); } .promo.promo-special { border-left-color: #a78bfa; } .promo.promo-news { border-left-color: var(--link); }
+.divider { height: 1px; background: var(--line); margin: 14px 0; }
+a.lnk { color: var(--link); text-decoration: none; font-weight: 600; }
 
-.btn {
-  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
-  padding: 10px 20px; border-radius: 10px; border: none;
-  font-size: 14px; font-weight: 600; cursor: pointer;
-  transition: opacity .15s;
-  width: 100%; text-align: center;
-}
-.btn:active { opacity: 0.7; }
-.btn-primary { background: var(--tg-button); color: var(--tg-button-text); }
-.btn-outline { background: transparent; color: var(--tg-link); border: 1px solid var(--tg-link); }
-.btn-danger { background: var(--tg-destructive); color: #fff; }
-.btn-logout { background: transparent; color: var(--tg-destructive); border: 1px solid var(--tg-destructive); }
-.btn-sm { padding: 6px 12px; font-size: 13px; width: auto; border-radius: 8px; }
-.btn-row { display: flex; gap: 8px; margin-top: 10px; }
-.btn-row .btn { flex: 1; }
-
-.input-group { margin-bottom: 12px; }
-.input-group label { display: block; font-size: 13px; color: var(--tg-hint); margin-bottom: 4px; }
-.input-group input {
-  width: 100%; padding: 12px; border-radius: 10px; border: 1px solid var(--tg-border);
-  background: var(--tg-card-bg); color: var(--tg-text); font-size: 15px; outline: none;
-}
-.input-group input:focus { border-color: var(--tg-link); }
-
-.loader {
-  display: flex; justify-content: center; padding: 32px;
-}
-.spinner {
-  width: 32px; height: 32px; border: 3px solid var(--tg-border);
-  border-top-color: var(--tg-link); border-radius: 50%;
-  animation: spin .6s linear infinite;
-}
-@keyframes spin { to { transform: rotate(360deg); } }
-
-.empty { text-align: center; padding: 32px 16px; color: var(--tg-hint); font-size: 14px; }
-.empty svg { width: 48px; height: 48px; margin-bottom: 8px; opacity: 0.4; }
-
-.alert { padding: 12px 16px; border-radius: 10px; margin-bottom: 10px; font-size: 14px; }
-.alert-error { background: rgba(255,59,48,0.15); color: var(--tg-destructive); }
-.alert-success { background: rgba(48,209,88,0.15); color: var(--tg-accent); }
-
-.modal-overlay {
-  display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0;
-  background: rgba(0,0,0,0.5); z-index: 200;
-  align-items: center; justify-content: center; padding: 16px;
-}
-.modal-overlay.show { display: flex; }
-.modal {
-  background: var(--tg-card-bg); border-radius: 16px; padding: 20px;
-  width: 100%; max-width: 360px;
-}
-.modal h3 { margin-bottom: 16px; font-size: 18px; }
-.modal .modal-actions { display: flex; gap: 8px; margin-top: 16px; }
-.modal .modal-actions .btn { flex: 1; }
-
-.tabs { display: flex; gap: 4px; padding: 8px; background: var(--tg-secondary-bg); border-radius: 10px; margin-bottom: 12px; }
-.tabs button { flex: 1; padding: 8px; border: none; border-radius: 8px; background: transparent; color: var(--tg-hint); font-size: 13px; font-weight: 500; cursor: pointer; }
-.tabs button.active { background: var(--tg-card-bg); color: var(--tg-text); }
-
-/* --- Orders --- */
-.order-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
-  gap: 12px;
-}
-.order-grid .order-card { margin-bottom: 0; }
-.order-card {
-  background: var(--tg-card-bg);
-  border-radius: 14px;
-  padding: 16px;
-  margin-bottom: 12px;
-  border: 1px solid var(--tg-border);
-}
-.order-card .order-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 12px;
-  position: relative;
-}
-.order-card .order-id {
-  font-weight: 700;
-  font-size: 13px;
-  color: var(--tg-hint);
-  letter-spacing: 0.02em;
-}
-.order-card .order-sum {
-  font-weight: 700;
-  font-size: 16px;
-  color: var(--tg-accent);
-}
-.order-card .order-name {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 14px;
-  font-weight: 500;
-  padding-bottom: 10px;
-  margin-bottom: 10px;
-  border-bottom: 1px solid var(--tg-border);
-}
-.order-card .order-items {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin-bottom: 14px;
-}
-.order-card .order-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  font-size: 13px;
-  padding: 6px 10px;
-  background: var(--tg-secondary-bg);
-  border-radius: 8px;
-  color: var(--tg-text);
-}
-.order-card .order-item .oi-name {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  margin-right: 8px;
-}
-.order-card .order-item .oi-qty {
-  color: var(--tg-hint);
-  white-space: nowrap;
-  margin-right: 12px;
-}
-.order-card .order-item .oi-sum {
-  font-weight: 600;
-  white-space: nowrap;
-  color: var(--tg-text);
-}
-.order-menu-btn {
-  background: none; border: none; color: var(--tg-hint);
-  font-size: 20px; cursor: pointer; padding: 4px 8px;
-  border-radius: 8px; line-height: 1;
-  transition: background .15s;
-}
-.order-menu-btn:hover { background: var(--tg-secondary-bg); }
-.order-menu {
-  position: absolute;
-  right: 0; bottom: 100%; margin-bottom: 4px;
-  background: var(--tg-card-bg);
-  border: 1px solid var(--tg-border);
-  border-radius: 10px;
-  padding: 4px;
-  box-shadow: 0 4px 16px rgba(0,0,0,0.3);
-  z-index: 50;
-  min-width: 140px;
-  display: none;
-  overflow: hidden;
-}
-.order-menu.show { display: block; }
-.order-menu-item {
-  display: flex; align-items: center; gap: 8px;
-  width: 100%; padding: 10px 12px; border: none; background: none;
-  font-size: 14px; color: var(--tg-text); cursor: pointer;
-  border-radius: 8px; text-align: left;
-  transition: background .1s;
-}
-.order-menu-item:hover { background: var(--tg-secondary-bg); }
-.order-menu-item.danger { color: var(--tg-destructive); }
-
-.akt-card { background: var(--tg-card-bg); border-radius: 12px; padding: 14px; margin-bottom: 10px; border: 1px solid var(--tg-border); }
-.akt-card .akt-header { display: flex; justify-content: space-between; margin-bottom: 6px; }
-.akt-card .akt-type { font-weight: 600; font-size: 14px; }
-.akt-card .akt-detail { font-size: 13px; color: var(--tg-hint); padding: 2px 0; }
-
-.product-image-placeholder {
-  width: 100%; height: 200px;
-  background: var(--tg-secondary-bg);
-  display: flex; align-items: center; justify-content: center;
-  color: var(--tg-hint); font-size: 14px;
-}
-
-/* --- Sidebar (desktop only) --- */
-.sidebar { display: none; }
-
-/* --- Desktop responsive --- */
-@media (min-width: 768px) {
-  body {
-    background: #111112;
-    display: flex;
-    padding-bottom: 0;
-  }
-  .sidebar {
-    display: flex;
-    flex-direction: column;
-    width: 220px;
-    height: 100vh;
-    position: fixed;
-    left: 0; top: 0;
-    background: var(--tg-secondary-bg);
-    border-right: 1px solid var(--tg-border);
-    padding: 16px 10px;
-    z-index: 200;
-  }
-  .sidebar-header { padding: 0 12px 16px; }
-  .sidebar-header h2 { font-size: 16px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .sidebar-nav { display: flex; flex-direction: column; gap: 2px; flex: 1; overflow-y: auto; }
-  .sidebar-nav-item {
-    display: flex; align-items: center; gap: 10px;
-    padding: 10px 12px; border: none; background: transparent;
-    color: var(--tg-hint); font-size: 14px; font-weight: 500;
-    border-radius: 10px; cursor: pointer;
-    transition: all .15s; text-align: left;
-    width: 100%;
-  }
-  .sidebar-nav-item:hover { background: var(--tg-card-bg); color: var(--tg-text); }
-  .sidebar-nav-item.active { background: var(--tg-button); color: var(--tg-button-text); }
-  .sidebar-nav-item svg { width: 20px; height: 20px; flex-shrink: 0; stroke: currentColor; fill: none; }
-
-  #app {
-    margin-left: 220px;
-    width: calc(100% - 220px);
-    min-height: 100vh;
-    background: var(--tg-bg);
-  }
-  .bottom-nav { display: none; }
-  .header { max-width: none; }
-  .modal-overlay { padding: 40px; }
-  .gallery img { width: 260px; height: 260px; }
-  .product-card img { height: 260px; }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
 }
 </style>
 </head>
 <body>
 
-<div id="app">
-  <div class="header">
-    <h1 id="companyName">...</h1>
-    <span class="user-info" id="headerUserInfo"></span>
-  </div>
+<aside class="rail" id="rail" aria-label="Асосий меню">
+  <div class="brand"><div class="mark">MX</div><div><h1 id="railName">MX Nasiya</h1><small>Шахсий кабинет</small></div></div>
+  <div id="railMenu"></div>
+  <div class="spacer"></div>
+  <button class="out" onclick="doLogout()" id="railOut" style="display:none"><svg viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9"/></svg><span>Чиқиш</span></button>
+</aside>
 
-  <div id="pageProfile" class="page active"></div>
-  <div id="pageProducts" class="page"></div>
-  <div id="pageCart" class="page"></div>
-  <div id="pageOrders" class="page"></div>
-  <div id="pageAkt" class="page"></div>
-  <div id="pageInfo" class="page"></div>
-  <div id="pageComplaint" class="page"></div>
-  <div id="pageRegister" class="page"></div>
+<header class="top">
+  <div class="brand"><div class="mark">MX</div><div style="min-width:0"><h1 id="companyName">MX Nasiya</h1><small>Насия бўйича шахсий кабинет</small></div></div>
+  <span class="pill" id="mockBadge" style="display:none" title="Тест маълумотлари">ДЕМО</span>
+  <span class="id num" id="headerUserInfo"></span>
+</header>
 
-  <div class="bottom-nav" id="bottomNav">
-    <button onclick="showPage('profile')" id="navProfile" class="active">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M6 21v-2a4 4 0 014-4h4a4 4 0 014 4v2"/></svg>
-      Profil
-    </button>
-    <button onclick="showPage('products')" id="navProducts">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="20" height="15" rx="2"/><path d="M16 7V5a2 2 0 00-2-2h-4a2 2 0 00-2 2v2"/><path d="M2 12h20"/></svg>
-      Mahsulotlar
-    </button>
-    <button onclick="showPage('cart')" id="navCart">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 002 1.61h9.72a2 2 0 002-1.61L23 6H6"/></svg>
-      Savat
-      <span class="cart-badge" id="cartBadgeBottom">0</span>
-    </button>
-    <button onclick="showPage('orders')" id="navOrders">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-      Buyurtmalar
-    </button>
-    <button onclick="showPage('akt')" id="navAkt">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/><path d="M12 7v5l3 3"/></svg>
-      Akt sverka
-    </button>
-    <button onclick="showPage('info')" id="navInfo">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
-      Info
-    </button>
-    <button onclick="showPage('complaint')" id="navComplaint">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/><path d="M8 9h8M8 13h6"/></svg>
-      Shikoyat
-    </button>
-  </div>
+<main>
+  <section id="viewCabinet" class="view active" aria-live="polite"></section>
+  <section id="viewDebt" class="view"></section>
+  <section id="viewSchedule" class="view"></section>
+  <section id="viewPay" class="view"></section>
+  <section id="viewPayments" class="view"></section>
+  <section id="viewPurchases" class="view"></section>
+  <section id="viewHelp" class="view"></section>
+  <section id="viewPromo" class="view"></section>
+  <section id="viewMore" class="view"></section>
+  <section id="viewRegister" class="view"></section>
+</main>
 
-  <div class="sidebar" id="sidebarNav">
-    <div class="sidebar-header">
-      <h2 id="sidebarCompany">MX Client</h2>
-    </div>
-    <nav class="sidebar-nav">
-      <button class="sidebar-nav-item active" data-page="profile" onclick="showPage('profile')">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M6 21v-2a4 4 0 014-4h4a4 4 0 014 4v2"/></svg>
-        <span>Profil</span>
-      </button>
-      <button class="sidebar-nav-item" data-page="products" onclick="showPage('products')">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="20" height="15" rx="2"/><path d="M16 7V5a2 2 0 00-2-2h-4a2 2 0 00-2 2v2"/><path d="M2 12h20"/></svg>
-        <span>Mahsulotlar</span>
-      </button>
-      <button class="sidebar-nav-item" data-page="cart" onclick="showPage('cart')">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 002 1.61h9.72a2 2 0 002-1.61L23 6H6"/></svg>
-        <span>Savat</span>
-        <span class="sidebar-cart-badge" id="cartBadgeSide">0</span>
-      </button>
-      <button class="sidebar-nav-item" data-page="orders" onclick="showPage('orders')">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-        <span>Buyurtmalar</span>
-      </button>
-      <button class="sidebar-nav-item" data-page="akt" onclick="showPage('akt')">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/><path d="M12 7v5l3 3"/></svg>
-        <span>Akt sverka</span>
-      </button>
-      <button class="sidebar-nav-item" data-page="info" onclick="showPage('info')">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
-        <span>Info</span>
-      </button>
-      <button class="sidebar-nav-item" data-page="complaint" onclick="showPage('complaint')">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/><path d="M8 9h8M8 13h6"/></svg>
-        <span>Shikoyat</span>
-      </button>
-    </nav>
-  </div>
-</div>
-
-<div class="modal-overlay" id="qtyModal">
-  <div class="modal">
-    <h3 id="qtyModalTitle">Miqdor kiriting</h3>
-    <div class="input-group">
-      <label>Miqdor (dona)</label>
-      <input type="number" id="qtyInput" placeholder="Masalan: 3" step="0.01" min="0.01">
-    </div>
-    <div class="modal-actions">
-      <button class="btn btn-outline" onclick="closeQtyModal()">Bekor qilish</button>
-      <button class="btn btn-primary" id="qtyConfirmBtn">Tasdiqlash</button>
-    </div>
-  </div>
-</div>
+<nav class="tabbar" id="tabbar" aria-label="Пастки меню"></nav>
+<div class="toast" id="toast" role="status"></div>
 
 <script>
+/* ── Telegram bridge ───────────────────────────────────────────────── */
 const Tg = (window.Telegram && window.Telegram.WebApp) ? window.Telegram.WebApp : {
-  initData: '', colorScheme: 'dark', themeParams: {},
-  ready: () => {}, expand: () => {}, onEvent: () => {},
-  MainButton: { setText: () => ({ hide: () => {} }), hide: () => {} },
+  initData: '', colorScheme: 'light', themeParams: {}, ready(){}, expand(){}, onEvent(){}, openLink(u){ window.open(u, '_blank'); },
+  HapticFeedback: { notificationOccurred(){}, impactOccurred(){} }, BackButton: { show(){}, hide(){}, onClick(){} },
 };
-try { Tg.ready(); } catch(e) {}
-try { Tg.expand(); } catch(e) {}
+try { Tg.ready(); Tg.expand(); } catch (e) {}
+const haptic = (k) => { try { k === 'tap' ? Tg.HapticFeedback.impactOccurred('light') : Tg.HapticFeedback.notificationOccurred(k); } catch (e) {} };
 
-const baseUrl = window.location.origin + window.location.pathname.replace(/\/[^/]*$/, '');
-const urlParams = new URLSearchParams(window.location.search);
-const botId = urlParams.get('bot_id') || '1';
-const sessionToken = urlParams.get('session') || '';
+const baseUrl = location.origin + location.pathname.replace(/\/[^/]*$/, '');
+const qp = new URLSearchParams(location.search);
+const botId = qp.get('bot_id') || '1';
+const sessionToken = qp.get('session') || '';
 const initData = Tg.initData || '';
 
-let currentUser = null;
-let currentPage = 'profile';
-let selectedProduct = null;
-let selectedOrder = null;
-let qtyCallback = null;
+let user = null, page = 'cabinet', contractsCache = null;
+let pay = {}, sched = { contract_id: null, status: 'all' };
 
+/* ── icons ─────────────────────────────────────────────────────────── */
+const I = {
+  cabinet: '<svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0116 0"/></svg>',
+  debt: '<svg viewBox="0 0 24 24"><rect x="2.5" y="5.5" width="19" height="13" rx="3"/><path d="M2.5 10h19M6.5 15h3"/></svg>',
+  schedule: '<svg viewBox="0 0 24 24"><rect x="3" y="4.5" width="18" height="16" rx="3"/><path d="M8 2.5v4M16 2.5v4M3 10h18M8 15h.01M12 15h.01M16 15h.01"/></svg>',
+  pay: '<svg viewBox="0 0 24 24"><path d="M12 5v14M8.5 8.5c0-1.4 1.6-2.3 3.5-2.3s3.5.9 3.5 2.3-1.6 2-3.5 2.4-3.5 1-3.5 2.4 1.6 2.3 3.5 2.3 3.5-.9 3.5-2.3"/></svg>',
+  payments: '<svg viewBox="0 0 24 24"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/></svg>',
+  purchases: '<svg viewBox="0 0 24 24"><path d="M5 8h14l-1 12H6z"/><path d="M9 8V6a3 3 0 016 0v2"/></svg>',
+  help: '<svg viewBox="0 0 24 24"><path d="M5 4h4l2 5-2.5 1.5a11 11 0 005 5L15 13l5 2v4a2 2 0 01-2 2A16 16 0 013 6a2 2 0 012-2"/></svg>',
+  promo: '<svg viewBox="0 0 24 24"><path d="M3 9h18v3H3zM5 12v8h14v-8M12 9v11M12 9c-1.5 0-4-.7-4-2.7S10.5 3 12 6.3M12 9c1.5 0 4-.7 4-2.7S13.5 3 12 6.3"/></svg>',
+  more: '<svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg>',
+  chev: '<svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg>',
+  ok: '<svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>',
+};
+const TABS = [['cabinet','Кабинет'], ['debt','Қарзим'], ['pay','Тўлаш'], ['schedule','График'], ['more','Кўпроқ']];
+const RAIL = [['cabinet','Кабинет'], ['debt','Қарзим'], ['schedule','Графигим'], ['pay','Тўлов қилиш'], ['payments','Тўловлар'], ['purchases','Харидлар'], ['promo','Акциялар'], ['help','Ёрдам']];
+document.getElementById('tabbar').innerHTML = TABS.map(([k, l]) => k === 'pay'
+  ? `<button class="pay" id="tab_${k}" onclick="go('${k}')" aria-label="${l}"><span class="fab">${I.pay}</span><span>${l}</span></button>`
+  : `<button id="tab_${k}" onclick="go('${k}')">${I[k]}${l}</button>`).join('');
+document.getElementById('railMenu').innerHTML = RAIL.map(([k, l]) => `<button data-page="${k}" onclick="go('${k}')">${I[k]}<span>${l}</span></button>`).join('');
+
+/* ── api ───────────────────────────────────────────────────────────── */
 function apiUrl(path) {
   const sep = path.includes('?') ? '&' : '?';
-  let url = `${baseUrl}/webapp/api${path}${sep}bot_id=${botId}`;
-  if (sessionToken) url += `&session=${encodeURIComponent(sessionToken)}`;
-  return url;
+  let u = `${baseUrl}/webapp/api${path}${sep}bot_id=${botId}`;
+  if (sessionToken) u += `&session=${encodeURIComponent(sessionToken)}`;
+  return u;
 }
-
-async function apiCall(method, path, body) {
+async function api(method, path, body) {
   const headers = { 'Content-Type': 'application/json' };
   if (initData) headers['X-Telegram-Init-Data'] = initData;
-  const opts = { method, headers };
-  if (body) opts.body = JSON.stringify(body);
-  const resp = await fetch(apiUrl(path), opts);
-  const data = await resp.json().catch(() => ({}));
-  if (!resp.ok) throw new Error(data.detail || 'Xatolik yuz berdi');
-  return data;
+  const r = await fetch(apiUrl(path), { method, headers, body: body ? JSON.stringify(body) : undefined });
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(d.detail || 'Хатолик юз берди. Қайта уриниб кўринг.');
+  return d;
 }
 
+/* ── theme ─────────────────────────────────────────────────────────── */
 function applyTheme() {
-  const scheme = Tg.colorScheme || 'dark';
-  document.body.className = scheme === 'light' ? 'light' : '';
-  if (Tg.themeParams) {
-    const p = Tg.themeParams;
-    if (p.bg_color) document.documentElement.style.setProperty('--tg-bg', p.bg_color);
-    if (p.text_color) document.documentElement.style.setProperty('--tg-text', p.text_color);
-    if (p.hint_color) document.documentElement.style.setProperty('--tg-hint', p.hint_color);
-    if (p.link_color) document.documentElement.style.setProperty('--tg-link', p.link_color);
-    if (p.button_color) document.documentElement.style.setProperty('--tg-button', p.button_color);
-    if (p.button_text_color) document.documentElement.style.setProperty('--tg-button-text', p.button_text_color);
-    if (p.secondary_bg_color) document.documentElement.style.setProperty('--tg-secondary-bg', p.secondary_bg_color);
-    if (p.section_bg_color) document.documentElement.style.setProperty('--tg-section-bg', p.section_bg_color);
-  }
+  const scheme = Tg.colorScheme || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+  document.body.classList.toggle('light', scheme === 'light');
+  const p = Tg.themeParams || {};
+  const map = { bg_color: '--bg', text_color: '--text', hint_color: '--muted', section_bg_color: '--surface', secondary_bg_color: '--surface-2' };
+  for (const k in map) if (p[k]) document.documentElement.style.setProperty(map[k], p[k]);
 }
-applyTheme();
-Tg.onEvent('themeChanged', applyTheme);
+applyTheme(); Tg.onEvent('themeChanged', applyTheme);
 
-Tg.MainButton.setText('Ro\'yxatdan o\'tish').hide();
-
-function showPage(name) {
-  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
-  document.querySelectorAll('.bottom-nav button').forEach(b => b.classList.remove('active'));
-  document.querySelectorAll('.sidebar-nav-item').forEach(b => b.classList.remove('active'));
-
-  const pageEl = document.getElementById('page' + name.charAt(0).toUpperCase() + name.slice(1));
-  if (pageEl) pageEl.classList.add('active');
-  const navEl = document.getElementById('nav' + name.charAt(0).toUpperCase() + name.slice(1));
-  if (navEl) navEl.classList.add('active');
-  const sideEl = document.querySelector(`.sidebar-nav-item[data-page="${name}"]`);
-  if (sideEl) sideEl.classList.add('active');
-
-  currentPage = name;
-  loadPage(name);
+/* ── helpers ───────────────────────────────────────────────────────── */
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const money = n => `<span class="num">${Number(n || 0).toLocaleString('ru-RU').replace(/,/g, ' ')}</span> сўм`;
+const moneyT = n => Number(n || 0).toLocaleString('ru-RU').replace(/,/g, ' ') + ' сўм';
+const ST = { active: 'Фаол', overdue: 'Кечиккан', closed: 'Ёпилган', paid: 'Тўланган', pending: 'Кутилмоқда' };
+const days = d => d == null ? '' : d < 0 ? `${-d} кун кечикди` : d === 0 ? 'бугун' : d === 1 ? 'эртага' : `${d} кундан кейин`;
+const note = (t, m) => `<div class="note ${t}">${m}</div>`;
+const skeleton = (n = 3) => Array.from({ length: n }, () => `<div class="sk-card"><div class="sk sk-line" style="width:45%"></div><div class="sk sk-line" style="width:80%"></div><div class="sk sk-line" style="width:60%;margin:0"></div></div>`).join('');
+const load = id => { $(id).innerHTML = skeleton(); };
+const empty = (em, b, s, act = '') => `<div class="empty"><div class="em">${em}</div><b>${b}</b><span>${s}</span>${act}</div>`;
+let toastT;
+function toast(msg, type) {
+  const t = $('toast'); t.textContent = msg; t.className = 'toast show' + (type === 'err' ? ' err' : '');
+  clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('show'), 2600); haptic(type === 'err' ? 'error' : 'success');
 }
-
-function loadPage(name) {
-  if (!currentUser) return;
-  if (!currentUser.registered && name !== 'register' && name !== 'profile') {
-    showPage('register');
-    return;
-  }
-  switch(name) {
-    case 'profile': loadProfile(); break;
-    case 'products': loadProductGroups(); break;
-    case 'cart': loadCart(); break;
-    case 'orders': loadOrders(); break;
-    case 'akt': loadAktSverka(); break;
-    case 'info': loadInfo(); break;
-    case 'complaint': loadComplaint(); break;
-    case 'register': showRegister(); break;
-  }
+function setHeader(company, id) {
+  $('companyName').textContent = company || 'MX Nasiya'; $('railName').textContent = company || 'MX Nasiya';
+  $('headerUserInfo').textContent = id ? '№ ' + id : '';
 }
+function ring(pct, late) {
+  const off = 339.3 * (1 - Math.min(100, Math.max(0, pct)) / 100);
+  return `<div class="ring" role="img" aria-label="Тўланган ${pct}%"><svg viewBox="0 0 120 120"><circle class="track" cx="60" cy="60" r="54"/><circle class="fill ${late ? 'late' : ''}" cx="60" cy="60" r="54" data-off="${off}"/></svg><div class="c"><div><b class="num">${pct}%</b><small>тўланган</small></div></div></div>`;
+}
+function animateBars(root) {
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    root.querySelectorAll('.bar > i').forEach(b => b.style.width = b.dataset.w + '%');
+    root.querySelectorAll('.ring .fill').forEach(c => c.style.strokeDashoffset = c.dataset.off);
+  }));
+}
+function backBtn(label, fn) { return `<button class="back" onclick="${fn}">${I.chev}${label}</button>`; }
 
-function renderLoader(pageId) {
-  document.getElementById('page' + pageId).innerHTML = '<div class="loader"><div class="spinner"></div></div>';
+/* ── routing ───────────────────────────────────────────────────────── */
+function go(name, arg) {
+  if (!user) return;
+  if (!user.registered && name !== 'register') name = 'register';
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  document.querySelectorAll('.tabbar button, .rail button').forEach(b => b.classList.remove('active'));
+  const v = $('view' + name[0].toUpperCase() + name.slice(1)); if (v) { v.classList.remove('active'); void v.offsetWidth; v.classList.add('active'); }
+  const tabKey = ['payments', 'purchases', 'help', 'promo'].includes(name) ? 'more' : name;
+  $('tab_' + tabKey)?.classList.add('active');
+  document.querySelector(`.rail button[data-page="${name}"]`)?.classList.add('active');
+  page = name; window.scrollTo({ top: 0 }); haptic('tap');
+  try { history.replaceState(null, '', '#' + name + (arg ? '/' + arg : '')); } catch (e) {}
+  ({ cabinet: loadCabinet, debt: loadDebt, schedule: loadSchedule, pay: loadPay, payments: loadPayments, purchases: loadPurchases, help: loadHelp, promo: () => loadPromo('all'), more: loadMore, register: showRegister })[name]?.(arg);
 }
 
-function showNotification(msg, type) {
-  const el = document.createElement('div');
-  el.className = 'notification ' + (type || 'success');
-  el.textContent = msg;
-  el.style.cssText = 'position:fixed;top:16px;left:50%;transform:translateX(-50%);z-index:999;padding:12px 20px;border-radius:10px;font-size:14px;font-weight:500;max-width:90%;text-align:center;transition:opacity 0.3s';
-  el.style.background = type === 'error' ? 'var(--tg-destructive,#e53935)' : 'var(--tg-accent,#50b86c)';
-  el.style.color = '#fff';
-  document.body.appendChild(el);
-  setTimeout(() => { el.style.opacity = '0'; setTimeout(() => el.remove(), 300); }, 3000);
-}
-
-function setHeader(company, userId) {
-  document.getElementById('companyName').textContent = company || 'MX Client Bot';
-  document.getElementById('headerUserInfo').textContent = userId ? 'ID: ' + userId : '';
-  document.getElementById('sidebarCompany').textContent = company || 'MX Client';
-}
-
-function renderAlert(type, msg) {
-  return `<div class="alert alert-${type}">${msg}</div>`;
-}
-
-function formatNum(n) { return Number(n).toLocaleString('ru-RU').replace(/,/g, ' '); }
-
-// --- Registration ---
+/* ── register / logout ─────────────────────────────────────────────── */
 function showRegister() {
-  const el = document.getElementById('pageRegister');
-  el.innerHTML = `
+  $('viewRegister').innerHTML = `
+    <div class="stagger">
+    <div class="card" style="text-align:center;padding:26px 18px">
+      <div style="width:64px;height:64px;border-radius:20px;background:var(--brand);color:var(--brand-ink);display:grid;place-items:center;font-weight:800;font-size:22px;margin:0 auto 14px">MX</div>
+      <h2 class="t" style="margin-bottom:6px">Хуш келибсиз</h2>
+      <p style="color:var(--muted);font-size:14px">Насия бўйича шахсий кабинетга кириш учун телефон рақамингизни тасдиқланг.</p>
+    </div>
     <div class="card">
-      <h3>Ro'yxatdan o'tish</h3>
-      <p style="margin-bottom:12px">Iltimos, telefon raqamingizni kiriting.</p>
-      <div class="input-group">
-        <label>Telefon raqam</label>
-        <input type="tel" id="regPhone" placeholder="998 XX XXX XX XX">
-      </div>
-      <p id="regError" style="color:var(--tg-destructive);font-size:13px;margin-bottom:8px;display:none"></p>
-      <button class="btn btn-primary" onclick="doRegister()">Ro'yxatdan o'tish</button>
-    </div>
-  `;
+      <div class="field"><label for="regPhone">Телефон рақам</label><input class="input num" type="tel" inputmode="numeric" id="regPhone" placeholder="998 90 123 45 67" value="${esc(user.phone_number || '')}" autocomplete="tel"></div>
+      <div id="regError"></div>
+      <button class="btn primary" onclick="doRegister()">Кириш</button>
+      <p style="font-size:12px;color:var(--muted);text-align:center;margin-top:10px">Рақам компания базасидаги мижоз рақами билан мос бўлиши керак.</p>
+    </div></div>`;
+  setTimeout(() => $('regPhone')?.focus(), 250);
+  $('regPhone').addEventListener('keydown', e => { if (e.key === 'Enter') doRegister(); });
 }
-
 async function doRegister() {
-  const phone = document.getElementById('regPhone').value.trim();
-  const errEl = document.getElementById('regError');
-  if (!phone) { errEl.textContent = 'Telefon raqamni kiriting'; errEl.style.display = 'block'; return; }
-
+  const phone = $('regPhone').value.trim();
+  if (!phone) { $('regError').innerHTML = note('err', 'Телефон рақамни киритинг.'); $('regPhone').focus(); return; }
+  const btn = document.querySelector('#viewRegister .btn'); btn.disabled = true; btn.textContent = 'Текширилмоқда…';
   try {
-    await apiCall('POST', '/register', { phone_number: phone });
-    currentUser.registered = true;
-    currentUser.phone_number = phone;
-    showPage('profile');
-  } catch(e) {
-    errEl.textContent = e.message; errEl.style.display = 'block';
-  }
+    const r = await api('POST', '/register', { phone_number: phone });
+    user.registered = true; user.phone_number = phone; user.client_id = r.client_id; contractsCache = null;
+    setHeader(user.company_name, r.client_id); $('railOut').style.display = '';
+    toast('Хуш келибсиз' + (r.name ? ', ' + r.name.split(' ')[0] : '') + '!');
+    go('cabinet');
+  } catch (e) { $('regError').innerHTML = note('err', esc(e.message)); btn.disabled = false; btn.textContent = 'Кириш'; }
 }
-  
 async function doLogout() {
+  if (!confirm('Тизимдан чиқасизми?')) return;
   try {
-    await apiCall('POST', '/logout');
-    currentUser.registered = false;
-    currentUser.client_id = null;
-    currentUser.phone_number = null;
-    showPage('register');
-  } catch(e) {
-    alert(e.message || 'Chiqishda xatolik');
-  }
+    await api('POST', '/logout');
+    user.registered = false; user.client_id = null; contractsCache = null;
+    setHeader(user.company_name, null); $('railOut').style.display = 'none';
+    go('register');
+  } catch (e) { toast(e.message, 'err'); }
 }
 
-// --- Profile ---
-async function loadProfile() {
-  renderLoader('Profile');
+/* ── cabinet ───────────────────────────────────────────────────────── */
+async function loadCabinet() {
+  load('viewCabinet');
   try {
-    const [data, balanceData] = await Promise.all([
-      apiCall('GET', '/profile'),
-      apiCall('GET', '/balance').catch(() => null),
-    ]);
-    const el = document.getElementById('pageProfile');
-    if (!data.fields || data.fields.length === 0) {
-      el.innerHTML = '<div class="empty">Profil ma\'lumotlari topilmadi</div>';
-      return;
-    }
-
-    const nameField = data.fields.find(f => f.label === 'Ism');
-    const initial = nameField ? nameField.value.charAt(0).toUpperCase() : '?';
-
-    let html = `<div class="profile-head">
-      <div class="profile-avatar">${initial}</div>
-      <div class="profile-head-info">
-        <h2>${nameField ? nameField.value : 'Foydalanuvchi'}</h2>
-        <div class="sub">Profil ma'lumotlari</div>
+    const c = await api('GET', '/cabinet');
+    const nxt = c.next_payment, late = c.overdue_amount > 0;
+    const pct = c.total_nasiya ? Math.min(100, Math.round(c.total_paid / c.total_nasiya * 100)) : 0;
+    const status = late ? `<span class="next late">● Муддати ўтган: ${moneyT(c.overdue_amount)}</span>`
+      : nxt ? `<span class="next">⏭ ${moneyT(nxt.amount)} · ${nxt.date}</span>`
+      : `<span class="next ok">✓ Барча тўловлар амалга оширилган</span>`;
+    const first = (c.name || '').split(' ')[0];
+    $('viewCabinet').innerHTML = `<div class="stagger">
+      <div style="display:flex;justify-content:space-between;align-items:flex-end;margin:2px 2px 12px">
+        <div><div class="eyebrow">Салом${first ? ', ' + esc(first) : ''}</div><h2 class="t" style="margin:2px 0 0">Кабинет</h2></div>
+        <span class="tag ${late ? 'overdue' : 'active'}">${esc(c.status || 'Мижоз')}</span>
       </div>
-    </div>`;
-
-    if (balanceData && balanceData.balance) {
-      const bal = balanceData.balance.trim();
-      const isNeg = bal.startsWith('-');
-      html += `<div class="profile-section">
-        <div class="profile-section-title">Balans</div>
-        <div class="profile-card"><div class="profile-field">
-          <div class="profile-field-icon">💰</div>
-          <div class="profile-field-content">
-            <div class="pf-label">Joriy balans</div>
-            <div class="pf-value" style="color:${isNeg ? 'var(--tg-accent)' : 'var(--tg-destructive)'};font-size:18px">${bal}</div>
-          </div>
-        </div></div>
-      </div>`;
-    }
-
-    const iconMap = {
-      'Ism': '👤', 'Guruh': '📁', 'Filial': '🏪', 'Manzil': '📍',
-      'Kategoriya': '🏷️', 'Telefon': '📞', 'Agent': '🤝', 'Status': '✅',
-      'Tashrif kunlari': '📅', 'Faoliyat turlari': '⚙️',
-    };
-
-    let fieldsHtml = '';
-    data.fields.forEach(f => {
-      const icon = iconMap[f.label] || '📄';
-      fieldsHtml += `<div class="profile-field">
-        <div class="profile-field-icon">${icon}</div>
-        <div class="profile-field-content">
-          <div class="pf-label">${f.label}</div>
-          <div class="pf-value">${f.value}</div>
-        </div>
-      </div>`;
-    });
-    if (fieldsHtml) {
-      html += `<div class="profile-section">
-        <div class="profile-section-title">Ma'lumotlar</div>
-        <div class="profile-card">${fieldsHtml}</div>
-      </div>`;
-    }
-
-    if (data.images && data.images.length > 0) {
-      let imgsHtml = '';
-      data.images.forEach(url => { imgsHtml += `<img src="${url}" alt="" loading="lazy">`; });
-      html += `<div class="profile-section">
-        <div class="profile-section-title">Rasmlar</div>
-        <div class="gallery">${imgsHtml}</div>
-      </div>`;
-    }
-
-    el.innerHTML = html;
-  } catch(e) {
-    document.getElementById('pageProfile').innerHTML = renderAlert('error', e.message);
-  }
-}
-
-// --- Info ---
-async function loadInfo() {
-  renderLoader('Info');
-  try {
-    const data = await apiCall('GET', '/info');
-    let html = `<div class="card"><h3>${data.company}</h3><div class="fields">`;
-    data.details.forEach(d => {
-      html += `<div class="field-item"><span class="flabel">${d.label}</span><span>${d.value}</span></div>`;
-    });
-    html += '</div></div>';
-    document.getElementById('pageInfo').innerHTML = html || '<div class="empty">Ma\'lumot topilmadi</div>';
-  } catch(e) {
-    document.getElementById('pageInfo').innerHTML = renderAlert('error', e.message);
-  }
-}
-
-// --- Products ---
-async function loadProductGroups() {
-  renderLoader('Products');
-  try {
-    const data = await apiCall('GET', '/products');
-    const el = document.getElementById('pageProducts');
-    if (!data.groups || data.groups.length === 0) {
-      el.innerHTML = '<div class="empty">Mahsulotlar topilmadi</div>';
-      return;
-    }
-    const icons = ['📦', '🥤', '🍪', '🧃', '🥜', '🍫', '🧴', '🛍️', '📋', '🏷️'];
-    let html = `<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
-      <h3 style="font-size:18px;font-weight:700">Mahsulot guruhlari</h3>
-      <span style="font-size:13px;color:var(--tg-hint);background:var(--tg-secondary-bg);padding:4px 10px;border-radius:8px">${data.groups.length} ta</span>
-    </div><div class="group-grid">`;
-    data.groups.forEach((g, i) => {
-      const icon = icons[i % icons.length];
-      html += `<div class="group-tile" onclick="loadProductsByGroup(${g.group_id}, '${g.group_name.replace(/'/g, "\\'")}')">
-        <div class="gt-icon">${icon}</div>
-        <div class="gt-name">${g.group_name}</div>
-        <div class="gt-count">${g.product_count} ta mahsulot</div>
-      </div>`;
-    });
-    html += '</div>';
-    el.innerHTML = html;
-  } catch(e) {
-    document.getElementById('pageProducts').innerHTML = renderAlert('error', e.message);
-  }
-}
-
-async function loadProductsByGroup(groupId, groupName) {
-  renderLoader('Products');
-  try {
-    const data = await apiCall('GET', `/products/${groupId}`);
-    const el = document.getElementById('pageProducts');
-    let html = `<div style="display:flex;align-items:center;gap:8px;margin-bottom:16px">
-      <button class="btn btn-sm btn-outline" onclick="loadProductGroups()" style="width:auto">← Orqaga</button>
-      <h3 style="font-size:18px;font-weight:700">${groupName}</h3>
-      <span style="font-size:13px;color:var(--tg-hint);margin-left:auto;background:var(--tg-secondary-bg);padding:4px 10px;border-radius:8px">${data.products ? data.products.length : 0} ta</span>
-    </div>`;
-    if (!data.products || data.products.length === 0) {
-      html += '<div class="empty">Bu guruhda mahsulotlar yo\'q</div>';
-    html += `<div class="profile-section">
-      <button class="btn btn-logout" onclick="doLogout()">🚪 Chiqish</button>
-    </div>`;
-
-    el.innerHTML = html;
-      return;
-    }
-    html += '<div class="product-grid">';
-    data.products.forEach(p => {
-      const statusIcon = { green: '🟢', red: '🔴', yellow: '🟡' }[p.status] || '';
-      const imgHtml = p.images.length > 0
-        ? `<img src="${p.images[0]}" alt="${p.name}" loading="lazy" onerror="this.parentElement.querySelector('.product-image-placeholder').style.display='flex';this.style.display='none'"><div class="product-image-placeholder" style="display:none">Rasm mavjud emas</div>`
-        : '<div class="product-image-placeholder">Rasm mavjud emas</div>';
-      const safeName = p.name.replace(/'/g, "\\'");
-      html += `<div class="product-card">
-        ${imgHtml}
-        <div class="pc-body">
-          <div class="pc-name">${statusIcon} ${p.name}</div>
-          <div class="pc-meta">💰 ${formatNum(p.price)} ${p.currency}${p.qty ? '<br>📦 Qoldiq: ' + p.qty + ' ta' : ''}</div>
-          <div style="display:flex;gap:8px;flex-wrap:wrap">
-            <button class="btn btn-primary btn-sm" onclick="startOrder(${p.id}, ${p.price}, '${safeName}')" style="width:auto">🛒 Buyurtma berish</button>
-            <button class="btn btn-outline btn-sm" onclick="addToCart(${p.id}, ${p.price}, '${safeName}')" style="width:auto">➕ Savatga qo'shish</button>
-          </div>
-        </div>
-      </div>`;
-    });
-    html += '</div>';
-    el.innerHTML = html;
-  } catch(e) {
-    document.getElementById('pageProducts').innerHTML = renderAlert('error', e.message);
-  }
-}
-
-function startOrder(productId, price, name) {
-  selectedProduct = { id: productId, price: price, name: name };
-  openQtyModal('Buyurtma', async (qty) => {
-    try {
-      const result = await apiCall('POST', '/orders', { product_id: productId, price: price, qty: parseFloat(qty) });
-      showNotification(`✅ Buyurtma qabul qilindi! ID: ${result.order_id}`, 'success');
-      showPage('orders');
-    } catch(e) { showNotification('❌ ' + e.message, 'error'); }
-  });
-}
-
-// --- Cart ---
-function addToCart(productId, price, name) {
-  openQtyModal(`Savatga qo'shish — ${name}`, async (qty) => {
-    try {
-      const result = await apiCall('POST', '/cart', {
-        product_id: productId,
-        name: name,
-        price: price,
-        qty: parseFloat(qty),
-        mode: 'add',
-      });
-      updateCartBadge(result.count);
-      showNotification(`✅ Savatga qo'shildi: ${name} — ${qty} ta`, 'success');
-    } catch(e) { showNotification('❌ ' + e.message, 'error'); }
-  });
-}
-
-async function loadCart() {
-  renderLoader('Cart');
-  try {
-    const data = await apiCall('GET', '/cart');
-    updateCartBadge(data.count);
-    const el = document.getElementById('pageCart');
-    if (!data.items || data.items.length === 0) {
-      el.innerHTML = `<div class="empty">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-          <circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/>
-          <path d="M1 1h4l2.68 13.39a2 2 0 002 1.61h9.72a2 2 0 002-1.61L23 6H6"/>
-        </svg>
-        <p>Savat bo'sh</p>
-        <p style="font-size:13px;margin-top:6px">Mahsulotlar bo'limidan tovar qo'shing</p>
-      </div>`;
-      return;
-    }
-    let html = `<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
-      <h3 style="font-size:18px;font-weight:700">🛒 Savat</h3>
-      <span style="font-size:13px;color:var(--tg-hint);background:var(--tg-secondary-bg);padding:4px 10px;border-radius:8px">${data.count} ta tovar</span>
-    </div><div class="cart-grid">`;
-    data.items.forEach(it => {
-      const safeName = it.name.replace(/'/g, "\\'");
-      html += `<div class="cart-item">
-        <div class="cart-item-name">${it.name}</div>
-        <div class="cart-item-meta">
-          <span>${formatNum(it.qty)} ta × ${formatNum(it.price)} UZS</span>
-          <span class="ci-sum">${formatNum(it.sum)} UZS</span>
-        </div>
-        <div class="cart-item-actions">
-          <button class="btn btn-outline btn-sm" onclick="cartEditQty(${it.product_id}, ${it.price}, '${safeName}', ${it.qty})">✏️ Miqdor</button>
-          <button class="btn btn-danger btn-sm" onclick="cartRemoveItem(${it.product_id}, '${safeName}')">🗑 O'chirish</button>
-        </div>
-      </div>`;
-    });
-    html += `</div><div class="cart-summary">
-      <div class="cart-summary-total">
-        <span>Jami:</span>
-        <span class="cs-amount">${formatNum(data.total)} UZS</span>
+      <div class="hero">
+        ${ring(pct, late)}
+        <div class="info"><div class="eyebrow">Қолган қарз</div><div class="big num">${money(c.remaining_debt)}</div>${status}</div>
       </div>
-      <div class="cart-summary-actions">
-        <button class="btn btn-outline" onclick="cartClearAll()">🧹 Tozalash</button>
-        <button class="btn btn-primary" onclick="cartCheckout()">✅ Buyurtma berish</button>
+      <div class="grid2">
+        <div class="tile"><div class="l">Амалдаги шартномалар</div><div class="n num">${c.active_contracts} <span style="font-weight:500;color:var(--muted);font-size:13px">/ ${c.total_contracts}</span></div></div>
+        <div class="tile"><div class="l">Умумий насия</div><div class="n">${money(c.total_nasiya)}</div></div>
+        <div class="tile paid"><div class="l">Тўланган</div><div class="n">${money(c.total_paid)}</div></div>
+        <div class="tile ${late ? 'late' : ''}"><div class="l">Муддати ўтган</div><div class="n">${money(c.overdue_amount)}</div></div>
       </div>
+      <div class="btns" style="margin:0 0 12px"><button class="btn primary" onclick="go('pay')">${I.pay} Тўлов қилиш</button><button class="btn ghost" onclick="go('debt')">Шартномалар</button></div>
+      <div class="card">
+        <h3 class="t">Шахсий маълумотлар</h3>
+        <div class="kv"><span class="k">Ф.И.О</span><span class="v">${esc(c.name || '—')}</span></div>
+        <div class="kv"><span class="k">Телефон</span><span class="v num">${c.phone ? '+' + esc(c.phone) : '—'}</span></div>
+        <div class="kv"><span class="k">Мижоз рақами</span><span class="v num">${esc(c.client_id)}</span></div>
+        <div class="kv"><span class="k">Мижоз бўлган сана</span><span class="v num">${esc(c.registered_at || '—')}</span></div>
+        <div class="kv"><span class="k">Эслатмалар</span><span class="v"><button class="btn sm ${c.reminders_enabled ? 'line' : 'primary'}" onclick="toggleReminders(${!c.reminders_enabled})">${c.reminders_enabled ? '🔔 Ёқилган · ўчириш' : '🔕 Ўчирилган · ёқиш'}</button></span></div>
+      </div>
+      <button class="btn danger" onclick="doLogout()">Чиқиш</button>
     </div>`;
-    el.innerHTML = html;
-  } catch(e) {
-    document.getElementById('pageCart').innerHTML = renderAlert('error', e.message);
-  }
+    animateBars($('viewCabinet'));
+  } catch (e) { $('viewCabinet').innerHTML = note('err', esc(e.message)); }
+}
+async function toggleReminders(on) {
+  try { await api('POST', '/reminders', { enabled: on }); toast(on ? 'Эслатмалар ёқилди' : 'Эслатмалар ўчирилди'); loadCabinet(); } catch (e) { toast(e.message, 'err'); }
 }
 
-function cartEditQty(productId, price, name, currentQty) {
-  openQtyModal(`✏️ Miqdor (joriy: ${currentQty} ta) — ${name}`, async (qty) => {
-    try {
-      const result = await apiCall('POST', '/cart', {
-        product_id: productId,
-        name: name,
-        price: price,
-        qty: parseFloat(qty),
-        mode: 'edit',
-      });
-      updateCartBadge(result.count);
-      showNotification(`✅ Miqdor yangilandi: ${qty} ta`, 'success');
-      loadCart();
-    } catch(e) { showNotification('❌ ' + e.message, 'error'); }
-  });
-}
-
-async function cartRemoveItem(productId, name) {
-  if (!confirm(`"${name}" — savatdan o'chirilsinmi?`)) return;
-  try {
-    const result = await apiCall('DELETE', `/cart/${productId}`);
-    updateCartBadge(result.count);
-    showNotification('🗑 Savatdan olib tashlandi', 'success');
-    loadCart();
-  } catch(e) { showNotification('❌ ' + e.message, 'error'); }
-}
-
-async function cartClearAll() {
-  if (!confirm('Butun savatni tozalashni xohlaysizmi?')) return;
-  try {
-    await apiCall('DELETE', '/cart');
-    updateCartBadge(0);
-    showNotification('🧹 Savat tozalandi', 'success');
-    loadCart();
-  } catch(e) { showNotification('❌ ' + e.message, 'error'); }
-}
-
-async function cartCheckout() {
-  if (!confirm('Buyurtma berishni tasdiqlaysizmi?')) return;
-  try {
-    const result = await apiCall('POST', '/cart/checkout');
-    updateCartBadge(0);
-    showNotification(`✅ Buyurtma qabul qilindi! ID: ${result.order_id} | Jami: ${formatNum(result.total)} UZS`, 'success');
-    showPage('orders');
-  } catch(e) { showNotification('❌ ' + e.message, 'error'); }
-}
-
-function updateCartBadge(count) {
-  const n = Number(count) || 0;
-  const bottom = document.getElementById('cartBadgeBottom');
-  const side = document.getElementById('cartBadgeSide');
-  if (bottom) {
-    bottom.textContent = n > 99 ? '99+' : String(n);
-    bottom.classList.toggle('show', n > 0);
-  }
-  if (side) {
-    side.textContent = n > 99 ? '99+' : String(n);
-    side.classList.toggle('show', n > 0);
-  }
-}
-
-async function refreshCartBadge() {
-  try {
-    const data = await apiCall('GET', '/cart');
-    updateCartBadge(data.count);
-  } catch(e) { /* ignore */ }
-}
-
-// --- Orders ---
-async function loadOrders() {
-  renderLoader('Orders');
-  try {
-    const data = await apiCall('GET', '/orders');
-    const el = document.getElementById('pageOrders');
-    if (!data.orders || data.orders.length === 0) {
-      el.innerHTML = '<div class="empty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/></svg>Hozircha buyurtmalar yo\'q</div>';
-      return;
-    }
-    let html = `<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
-      <h3 style="font-size:18px;font-weight:700">Buyurtmalar</h3>
-      <span style="font-size:13px;color:var(--tg-hint);background:var(--tg-secondary-bg);padding:4px 10px;border-radius:8px">${data.orders.length} ta</span>
-    </div><div class="order-grid">`;
-    data.orders.forEach(o => {
-      let itemsHtml = o.items.map(i => `<div class="order-item">
-        <span class="oi-name">${i.name}</span>
-        <span class="oi-qty">${i.qty} ta</span>
-        <span class="oi-sum">${formatNum(i.summa)} UZS</span>
-      </div>`).join('');
-      html += `<div class="order-card">
-        <div class="order-header">
-          <span class="order-id">#ORD-${String(o.id).padStart(4, '0')}</span>
-          <span class="order-sum">${formatNum(o.total_sum)} UZS</span>
-          <button class="order-menu-btn" onclick="event.stopPropagation();toggleOrderMenu(this)" aria-label="Menyu">⋮</button>
-          <div class="order-menu">
-            <button class="order-menu-item" onclick="event.stopPropagation();closeOrderMenus();startEditOrder(${o.id}, ${o.first_product_id}, ${o.first_price})">✏️ Tahrirlash</button>
-            <button class="order-menu-item danger" onclick="event.stopPropagation();closeOrderMenus();doDeleteOrder(${o.id})">🗑 O'chirish</button>
-          </div>
-        </div>
-        <div class="order-name">👤 ${o.name || 'Mijoz'}</div>
-        <div class="order-items">${itemsHtml}</div>
-      </div>`;
-    });
-    html += '</div>';
-    el.innerHTML = html;
-  } catch(e) {
-    document.getElementById('pageOrders').innerHTML = renderAlert('error', e.message);
-  }
-}
-
-function startEditOrder(orderId, productId, price) {
-  selectedOrder = { id: orderId, productId: productId, price: price };
-  openQtyModal('Tahrirlash', async (qty) => {
-    try {
-      const result = await apiCall('PATCH', `/orders/${orderId}`, { product_id: productId, price: price, qty: parseFloat(qty) });
-      showNotification(`✅ Buyurtma yangilandi! Yangi jami: ${formatNum(result.total)} UZS`, 'success');
-      loadOrders();
-    } catch(e) { showNotification('❌ ' + e.message, 'error'); }
-  });
-}
-
-async function doDeleteOrder(orderId) {
-  if (!confirm('Buyurtmani o\'chirishni xohlaysizmi?')) return;
-  try {
-    await apiCall('DELETE', `/orders/${orderId}`);
-    showNotification('✅ Buyurtma o\'chirildi', 'success');
-    loadOrders();
-  } catch(e) { showNotification('❌ ' + e.message, 'error'); }
-}
-
-// --- Akt Sverka ---
-async function loadAktSverka(months) {
-  renderLoader('Akt');
-  const m = months || 1;
-  try {
-    const data = await apiCall('GET', `/akt-sverka?months=${m}`);
-    const el = document.getElementById('pageAkt');
-    let html = `<h3 style="margin-bottom:12px">📊 Akt sverka</h3>
-      <div class="tabs">
-        <button class="${m === 1 ? 'active' : ''}" onclick="loadAktSverka(1)">1 oylik</button>
-        <button class="${m === 2 ? 'active' : ''}" onclick="loadAktSverka(2)">2 oylik</button>
-        <button class="${m === 3 ? 'active' : ''}" onclick="loadAktSverka(3)">3 oylik</button>
-      </div>`;
-    if (!data.documents || data.documents.length === 0) {
-      html += '<div class="empty">Operatsiyalar mavjud emas</div>';
-    }
-    data.documents.forEach(d => {
-      let detailsHtml = d.details.map(det => `<div class="akt-detail">▫️ ${det.name} — ${det.qty} ta (${formatNum(det.summa)} UZS)</div>`).join('');
-      html += `<div class="akt-card">
-        <div class="akt-header"><span class="akt-type">📄 ${d.direction}</span><span>#${d.id} | ${d.date}</span></div>
-        <div class="akt-detail">▪️ Summa: ${formatNum(d.debt || d.credit)} UZS</div>
-        <div class="akt-detail">▪️ Balans: ${formatNum(d.balance)} UZS</div>
-        ${detailsHtml}
-      </div>`;
-    });
-    el.innerHTML = html;
-  } catch(e) {
-    document.getElementById('pageAkt').innerHTML = renderAlert('error', e.message);
-  }
-}
-
-// --- Order Menu ---
-function toggleOrderMenu(btn) {
-  const menu = btn.nextElementSibling;
-  const isOpen = menu.classList.contains('show');
-  document.querySelectorAll('.order-menu.show').forEach(m => m.classList.remove('show'));
-  if (!isOpen) menu.classList.add('show');
-}
-function closeOrderMenus() {
-  document.querySelectorAll('.order-menu.show').forEach(m => m.classList.remove('show'));
-}
-document.addEventListener('click', (e) => {
-  if (!e.target.closest('.order-menu, .order-menu-btn')) closeOrderMenus();
-});
-
-// --- Quantity Modal ---
-function openQtyModal(action, callback) {
-  document.getElementById('qtyModalTitle').textContent = `${action} - miqdor kiriting`;
-  document.getElementById('qtyInput').value = '';
-  document.getElementById('qtyModal').classList.add('show');
-  qtyCallback = callback;
-  document.getElementById('qtyInput').focus();
-}
-function closeQtyModal() {
-  document.getElementById('qtyModal').classList.remove('show');
-  qtyCallback = null;
-}
-document.getElementById('qtyConfirmBtn').addEventListener('click', () => {
-  const qty = document.getElementById('qtyInput').value.trim().replace(',', '.');
-  if (!qty || isNaN(qty) || parseFloat(qty) <= 0) {
-    showNotification('❌ Iltimos, musbat miqdor kiriting', 'error');
-    return;
-  }
-  const cb = qtyCallback;
-  closeQtyModal();
-  if (cb) cb(qty);
-});
-
-// --- Init ---
-async function init() {
-  try {
-    const userData = await apiCall('GET', '/user');
-    currentUser = userData;
-    setHeader(userData.company_name, userData.client_id);
-
-    if (userData.registered) {
-      showPage('profile');
-      refreshCartBadge();
-    } else {
-      showPage('register');
-    }
-  } catch(e) {
-    document.getElementById('app').innerHTML = `
-      <div style="display:flex;align-items:center;justify-content:center;height:100vh;flex-direction:column;gap:12px">
-        <p style="font-size:16px;color:var(--tg-hint)">Xatolik yuz berdi</p>
-        <p style="font-size:14px;color:var(--tg-destructive)">${e.message}</p>
-        <p style="font-size:13px;color:var(--tg-hint)">Iltimos, bot orqali /start buyrug'ini yuboring va qayta urinib ko'ring.</p>
-      </div>
-    `;
-    document.getElementById('bottomNav').style.display = 'none';
-  }
-}
-
-// --- Complaint ---
-async function loadComplaint() {
-  renderLoader('Complaint');
-  const html = `<div class="card" style="max-width:500px;margin:0 auto">
-    <h3 style="margin-bottom:16px">✍️ Shikoyat / Taklif</h3>
-    <p style="color:var(--tg-hint);margin-bottom:16px;font-size:14px">Fikr, shikoyat yoki taklifingizni yozing.</p>
-    <div class="input-group" style="margin-bottom:12px">
-      <label>Xabar matni</label>
-      <textarea id="noteInput" rows="5" placeholder="Matnni kiriting..." style="width:100%;padding:10px;border:1px solid var(--tg-secondary-bg);border-radius:8px;background:var(--tg-bg);color:var(--tg-text);resize:vertical;font-size:14px"></textarea>
-    </div>
-    <div class="input-group" style="margin-bottom:16px">
-      <label>Izoh (ixtiyoriy)</label>
-      <input type="text" id="commentInput" placeholder="Qo'shimcha izoh..." style="width:100%;padding:10px;border:1px solid var(--tg-secondary-bg);border-radius:8px;background:var(--tg-bg);color:var(--tg-text);font-size:14px">
-    </div>
-    <button id="sendNoteBtn" onclick="sendNote()" style="width:100%;padding:12px;border:none;border-radius:8px;background:var(--tg-accent);color:#fff;font-size:15px;font-weight:600;cursor:pointer">Yuborish</button>
-    <div id="noteResult" style="margin-top:12px"></div>
+/* ── debt / contracts ──────────────────────────────────────────────── */
+async function contracts(force) { if (!contractsCache || force) contractsCache = await api('GET', '/contracts'); return contractsCache; }
+function contractCard(c, onclick) {
+  const paidTotal = c.paid + c.initial_payment, pct = c.total ? Math.min(100, Math.round(paidTotal / c.total * 100)) : 0;
+  return `<div class="card tap" role="button" tabindex="0" onclick="${onclick}" onkeydown="if(event.key==='Enter')this.click()">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:4px"><b>${esc(c.number)}</b><span class="tag ${c.status}">${ST[c.status]}</span></div>
+    <div style="font-size:13px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${c.products.map(p => esc(p.name)).join(' · ')}</div>
+    <div class="bar"><i data-w="${pct}"></i></div>
+    <div style="display:flex;justify-content:space-between;font-size:13px;gap:8px"><span style="color:var(--muted)">Тўланган ${pct}%</span><b>Қарз: ${money(c.remaining_debt)}</b></div>
+    ${c.next_payment_date ? `<div style="font-size:12.5px;color:var(--muted);margin-top:6px">⏭ Кейинги: ${money(c.next_payment_amount)} · ${c.next_payment_date} <span style="color:${c.days_to_next < 0 ? 'var(--late)' : 'inherit'}">(${days(c.days_to_next)})</span></div>` : ''}
   </div>`;
-  document.getElementById('pageComplaint').innerHTML = html;
+}
+async function loadDebt(id) {
+  if (id) return loadContract(id);
+  load('viewDebt');
+  try {
+    const d = await contracts(true);
+    if (!d.contracts.length) return $('viewDebt').innerHTML = empty('📄', 'Шартномалар йўқ', 'Сизда ҳали насия шартномалари мавжуд эмас.');
+    const late = d.overdue_amount > 0;
+    $('viewDebt').innerHTML = `<div class="stagger">
+      <h2 class="t">Қарзим</h2>
+      <div class="hero" style="grid-template-columns:1fr">
+        <div class="info"><div class="eyebrow">Умумий қолган қарз</div><div class="big">${money(d.total_debt)}</div>
+        <span class="next ${late ? 'late' : ''}">${late ? '● Муддати ўтган: ' + moneyT(d.overdue_amount) : '📄 Фаол шартномалар: ' + d.active_count + ' та'}</span></div>
+      </div>
+      <div class="eyebrow" style="margin:6px 2px 8px">Шартномалар · ${d.contracts.length}</div>
+      ${d.contracts.map(c => contractCard(c, `go('debt', ${c.contract_id})`)).join('')}
+      <button class="btn primary" onclick="go('pay')">${I.pay} Тўлов қилиш</button>
+    </div>`;
+    animateBars($('viewDebt'));
+  } catch (e) { $('viewDebt').innerHTML = note('err', esc(e.message)); }
+}
+async function loadContract(id) {
+  load('viewDebt');
+  try {
+    const c = await api('GET', `/contracts/${id}`);
+    const paidTotal = c.paid + c.initial_payment, pct = c.total ? Math.min(100, Math.round(paidTotal / c.total * 100)) : 0;
+    $('viewDebt').innerHTML = `${backBtn('Шартномалар', "go('debt')")}<div class="stagger">
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:10px"><h2 class="t" style="margin:0">${esc(c.number)}</h2><span class="tag ${c.status}">${ST[c.status]}</span></div>
+        <div style="font-size:13px;color:var(--muted);margin:4px 0 12px">${c.date} · ${esc(c.branch || '')}</div>
+        <div class="bar" style="margin-top:0"><i data-w="${pct}"></i></div>
+        <div style="display:flex;justify-content:space-between;font-size:13px"><span style="color:var(--muted)">${pct}% тўланган · ${c.paid_count}/${c.months} тўлов</span><b style="color:var(--late)">${money(c.remaining_debt)}</b></div>
+      </div>
+      <div class="card"><div class="eyebrow" style="margin-bottom:8px">Товарлар</div>
+        ${c.products.map(p => `<div class="kv"><span>${esc(p.name)} <span style="color:var(--muted)">× ${p.qty}</span></span><span class="v">${money(p.sum)}</span></div>`).join('')}
+      </div>
+      <div class="card"><div class="eyebrow" style="margin-bottom:8px">Шартнома шартлари</div>
+        <div class="kv"><span class="k">Насия суммаси</span><span class="v">${money(c.total)}</span></div>
+        <div class="kv"><span class="k">Бошланғич тўлов</span><span class="v">${money(c.initial_payment)}</span></div>
+        <div class="kv"><span class="k">Муддат</span><span class="v">${c.months} ой · ойига ${money(c.monthly_payment)}</span></div>
+        <div class="kv"><span class="k">Якуний сана</span><span class="v num">${c.end_date}</span></div>
+        <div class="kv"><span class="k">Тўланган</span><span class="v" style="color:var(--paid)">${money(paidTotal)}</span></div>
+        <div class="kv"><span class="k">Қолган қарз</span><span class="v" style="color:var(--late)">${money(c.remaining_debt)}</span></div>
+        ${c.overdue_amount > 0 ? `<div class="kv"><span class="k">Муддати ўтган</span><span class="v" style="color:var(--late)">${money(c.overdue_amount)} · ${c.overdue_count} та</span></div>` : ''}
+        ${c.next_payment_date ? `<div class="kv"><span class="k">Кейинги тўлов</span><span class="v">${money(c.next_payment_amount)}<br><small style="color:var(--muted);font-weight:500">${c.next_payment_date} · ${days(c.days_to_next)}</small></span></div>` : ''}
+      </div>
+      <div class="btns" style="margin-top:0"><button class="btn ghost" onclick="go('schedule', ${c.contract_id})">${I.schedule} График</button>${c.status !== 'closed' ? `<button class="btn primary" onclick="go('pay', ${c.contract_id})">${I.pay} Тўлаш</button>` : ''}</div>
+    </div>`;
+    animateBars($('viewDebt'));
+  } catch (e) { $('viewDebt').innerHTML = note('err', esc(e.message)); }
 }
 
-async function sendNote() {
-  const note = document.getElementById('noteInput').value.trim();
-  const comment = document.getElementById('commentInput').value.trim();
-  const btn = document.getElementById('sendNoteBtn');
-  const resultDiv = document.getElementById('noteResult');
-  if (!note) { resultDiv.innerHTML = '<p style="color:var(--tg-destructive);font-size:14px">❌ Matn kiriting</p>'; return; }
-  btn.disabled = true;
-  btn.textContent = 'Yuborilmoqda...';
+/* ── schedule ──────────────────────────────────────────────────────── */
+async function loadSchedule(id) {
+  load('viewSchedule');
   try {
-    const res = await apiCall('POST', '/create-note', { note, comment });
-    resultDiv.innerHTML = '<p style="color:var(--tg-accent);font-size:14px">✅ Xabaringiz yuborildi. Rahmat!</p>';
-    document.getElementById('noteInput').value = '';
-    document.getElementById('commentInput').value = '';
-  } catch(e) {
-    resultDiv.innerHTML = '<p style="color:var(--tg-destructive);font-size:14px">❌ ' + e.message + '</p>';
-  } finally {
-    btn.disabled = false;
-    btn.textContent = 'Yuborish';
+    if (id === undefined || id === null) {
+      const d = await contracts();
+      if (!d.contracts.length) return $('viewSchedule').innerHTML = empty('📅', 'График йўқ', 'Шартнома бўлмаганда тўлов графиги ҳам бўлмайди.');
+      if (d.contracts.length === 1) id = d.contracts[0].contract_id;
+      else {
+        $('viewSchedule').innerHTML = `<div class="stagger"><h2 class="t">Тўлов графиги</h2>
+          <p style="color:var(--muted);font-size:14px;margin:-6px 2px 12px">Қайси шартнома бўйича графикни кўрасиз?</p>
+          ${d.contracts.map(c => `<div class="card tap" role="button" tabindex="0" onclick="go('schedule', ${c.contract_id})" onkeydown="if(event.key==='Enter')this.click()">
+            <div style="display:flex;justify-content:space-between;align-items:center"><b>${esc(c.number)}</b><span class="tag ${c.status}">${ST[c.status]}</span></div>
+            <div style="display:flex;justify-content:space-between;font-size:13px;color:var(--muted);margin-top:4px"><span>${c.next_payment_date ? '⏭ ' + c.next_payment_date + ' · ' + moneyT(c.next_payment_amount) : '✓ Тўлиқ тўланган'}</span><b style="color:var(--text)">${moneyT(c.remaining_debt)}</b></div></div>`).join('')}
+          <button class="btn line" onclick="go('schedule', 0)">Барча шартномалар бирга</button></div>`;
+        return;
+      }
+    }
+    sched = { contract_id: id || null, status: 'all' };
+    await renderSchedule();
+  } catch (e) { $('viewSchedule').innerHTML = note('err', esc(e.message)); }
+}
+async function setSched(s) { sched.status = s; haptic('tap'); await renderSchedule(false); }
+async function renderSchedule(withSkeleton = true) {
+  if (withSkeleton) load('viewSchedule');
+  const d = await api('GET', `/schedule?status=${sched.status}` + (sched.contract_id ? `&contract_id=${sched.contract_id}` : ''));
+  const nxt = d.next_payment, F = [['all', 'Барчаси'], ['pending', 'Кутилаётган'], ['paid', 'Тўланган'], ['overdue', 'Муддати ўтган']];
+  let nextMarked = false;
+  const rows = d.rows.map(r => {
+    const isNext = !nextMarked && r.status !== 'paid' && (nextMarked = true);
+    return `<div class="it ${r.status} ${isNext ? 'next' : ''}"><span class="dot"></span>
+      <div class="d"><b class="num">${r.date}${sched.contract_id ? '' : ' <span style="font-weight:500;color:var(--muted)">· ' + esc(r.contract_number) + '</span>'}</b>
+      <small>${ST[r.status]}${r.status === 'paid' && r.paid_date ? ' · ' + r.paid_date : r.status !== 'paid' ? ' · ' + days(r.days) : ''}</small></div>
+      <span class="a">${money(r.amount)}</span></div>`;
+  }).join('');
+  $('viewSchedule').innerHTML = `${backBtn('Шартнома танлаш', "go('schedule')")}
+    <h2 class="t">График${sched.contract_id && d.rows[0] ? ` <span style="font-weight:500;color:var(--muted);font-size:15px">${esc(d.rows[0].contract_number)}</span>` : ''}</h2>
+    ${nxt && !sched.contract_id ? note(nxt.status === 'overdue' ? 'err' : 'info', `<span>${nxt.status === 'overdue' ? '●' : '⏭'}</span><span><b>Келгуси тўлов:</b> ${moneyT(nxt.amount)} · ${nxt.date} (${days(nxt.days)})<br><small>${esc(nxt.contract_number)}</small></span>`) : ''}
+    <div class="chips" role="tablist">${F.map(([k, l]) => `<button class="chip ${sched.status === k ? 'active' : ''}" role="tab" aria-selected="${sched.status === k}" onclick="setSched('${k}')">${l}</button>`).join('')}</div>
+    <div class="card">${d.rows.length ? `<div class="tl">${rows}</div><div class="divider"></div><div class="kv" style="padding:0"><span class="k">Жами · ${d.rows.length} та</span><span class="v">${money(d.total)}</span></div>` : '<div class="empty" style="padding:24px"><b>Бу бўлимда тўловлар йўқ</b><span>Бошқа фильтрни танланг.</span></div>'}</div>
+    <div class="btns" style="margin-top:0"><button class="btn primary" onclick="go('pay'${sched.contract_id ? ', ' + sched.contract_id : ''})">${I.pay} Тўлов қилиш</button>${sched.contract_id ? `<button class="btn ghost" onclick="go('debt', ${sched.contract_id})">Шартнома</button>` : ''}</div>`;
+}
+
+/* ── pay (3 steps) ─────────────────────────────────────────────────── */
+const steps = n => `<div class="steps" aria-label="${n}-қадам, жами 3">${[1, 2, 3].map(i => `<span class="${i <= n ? 'on' : ''}"></span>`).join('')}</div>`;
+async function loadPay(id) {
+  load('viewPay');
+  try {
+    const d = await contracts(true), open = d.contracts.filter(c => c.status !== 'closed');
+    if (!open.length) return $('viewPay').innerHTML = empty('🎉', 'Очиқ қарз йўқ', 'Барча шартномалар тўлиқ тўланган.', `<div style="margin-top:14px"><button class="btn line" onclick="go('payments')">Тўловлар тарихи</button></div>`);
+    if (!id) {
+      if (open.length === 1) id = open[0].contract_id;
+      else return $('viewPay').innerHTML = `<div class="stagger"><h2 class="t">Тўлов қилиш</h2><p style="color:var(--muted);font-size:14px;margin:-6px 2px 12px">Қайси шартнома бўйича тўлайсиз?</p>
+        ${open.map(c => `<div class="card tap" role="button" tabindex="0" onclick="go('pay', ${c.contract_id})" onkeydown="if(event.key==='Enter')this.click()">
+          <div style="display:flex;justify-content:space-between;align-items:center"><b>${esc(c.number)}</b><b>${money(c.remaining_debt)}</b></div>
+          <div style="font-size:12.5px;color:var(--muted);margin-top:4px">${c.next_payment_date ? '⏭ ' + c.next_payment_date + ' · ' + moneyT(c.next_payment_amount) : ''}${c.overdue_amount > 0 ? ` <span style="color:var(--late)">· ● ${moneyT(c.overdue_amount)} кечиккан</span>` : ''}</div></div>`).join('')}</div>`;
+    }
+    const c = open.find(x => x.contract_id === id) || await api('GET', `/contracts/${id}`);
+    if (!c || c.status === 'closed') return $('viewPay').innerHTML = note('info', 'Бу шартнома бўйича қарз йўқ.');
+    pay = { contract: c, contract_id: c.contract_id, amount: null, method: null };
+    stepAmount();
+  } catch (e) { $('viewPay').innerHTML = note('err', esc(e.message)); }
+}
+function stepAmount() {
+  const c = pay.contract, opts = [];
+  if (c.overdue_amount > 0) opts.push(['Муддати ўтганни тўлаш', `${c.overdue_count} та кечиккан тўлов`, c.overdue_amount]);
+  if (c.next_payment_amount > 0) opts.push(['Навбатдаги тўлов', c.next_payment_date + ' · ' + days(c.days_to_next), c.next_payment_amount]);
+  opts.push(['Тўлиқ қарзни ёпиш', 'Шартнома тўлиқ ёпилади', c.remaining_debt]);
+  $('viewPay').innerHTML = `${backBtn('Шартнома', "go('pay')")}${steps(1)}
+    <h2 class="t">Қанча тўлайсиз?</h2>
+    <div class="card"><div class="kv" style="padding-top:0"><span class="k">${esc(c.number)}</span><span class="v">Қарз: ${money(c.remaining_debt)}</span></div></div>
+    <div id="opts">${opts.map(([t, s, a], i) => `<div class="opt" role="radio" tabindex="0" aria-checked="false" onclick="pickAmount(${a}, this)" onkeydown="if(event.key==='Enter'||event.key===' ')this.click()"><div class="l"><b>${t}</b><small>${s}</small></div><span class="a">${money(a)}</span><span class="chk">${I.ok}</span></div>`).join('')}</div>
+    <div class="field"><label for="payCustom">Ёки бошқа сумма (сўм)</label><input class="input num" type="number" inputmode="numeric" id="payCustom" placeholder="масалан 500 000" min="1000" step="1000" oninput="pickAmount(Number(this.value), null)"></div>
+    <div id="payErr"></div>
+    <button class="btn primary" id="payNext" onclick="stepMethod()" disabled>Давом этиш</button>`;
+}
+function pickAmount(a, node) {
+  document.querySelectorAll('.opt').forEach(x => { x.classList.remove('sel'); x.setAttribute('aria-checked', 'false'); });
+  if (node) { node.classList.add('sel'); node.setAttribute('aria-checked', 'true'); $('payCustom').value = ''; haptic('tap'); }
+  const c = pay.contract; $('payErr').innerHTML = '';
+  if (a > c.remaining_debt + 0.5) { a = c.remaining_debt; $('payErr').innerHTML = note('info', `Сумма қарздан кўп эди — ${moneyT(a)} га туширилди.`); if (!node) $('payCustom').value = Math.round(a); }
+  pay.amount = a > 0 ? a : null; $('payNext').disabled = !pay.amount;
+}
+async function stepMethod() {
+  if (!pay.amount) return;
+  const m = await api('GET', '/payment-methods'), c = pay.contract, after = Math.max(0, c.remaining_debt - pay.amount);
+  $('viewPay').innerHTML = `${backBtn('Сумма', 'stepAmount()')}${steps(2)}
+    <h2 class="t">Қандай тўлайсиз?</h2>
+    <div class="card"><div class="kv" style="padding-top:0"><span class="k">Сумма</span><span class="v">${money(pay.amount)}</span></div><div class="kv" style="padding-bottom:0"><span class="k">Тўловдан кейин қарз</span><span class="v">${money(after)}</span></div></div>
+    <div class="pm" role="radiogroup">${m.methods.map(x => `<button id="pm_${x.key}" role="radio" aria-checked="false" style="--pm-color:${x.color}" onclick="pickMethod('${x.key}')"><span class="logo" style="background:${x.color}">${x.label[0]}</span>${x.label}</button>`).join('')}</div>
+    ${m.mock ? note('warn', '<span>ℹ️</span><span>Демо режим: тўлов симуляция қилинади, пул ечилмайди.</span>') : ''}
+    <div id="payErr"></div>
+    <button class="btn primary" id="payInit" onclick="stepCheckout()" disabled>Тўловга ўтиш</button>`;
+  if (pay.method) pickMethod(pay.method);
+}
+function pickMethod(k) {
+  pay.method = k; haptic('tap');
+  document.querySelectorAll('.pm button').forEach(b => { b.classList.toggle('sel', b.id === 'pm_' + k); b.setAttribute('aria-checked', b.id === 'pm_' + k); });
+  $('payInit').disabled = false;
+}
+async function stepCheckout() {
+  const b = $('payInit'); b.disabled = true; b.textContent = 'Тайёрланмоқда…';
+  try {
+    const r = await api('POST', '/payments/init', { contract_id: pay.contract_id, amount: pay.amount, method: pay.method });
+    pay.amount = r.amount;
+    $('viewPay').innerHTML = `${backBtn('Тўлов усули', 'stepMethod()')}${steps(3)}
+      <h2 class="t">${esc(r.method.label)} орқали тўлов</h2>
+      <div class="card">
+        <div class="kv" style="padding-top:0"><span class="k">Шартнома</span><span class="v">${esc(r.contract_number)}</span></div>
+        <div class="kv"><span class="k">Сумма</span><span class="v">${money(r.amount)}</span></div>
+        <div class="kv" style="padding-bottom:0"><span class="k">Усул</span><span class="v" style="display:inline-flex;align-items:center;gap:6px"><span style="width:10px;height:10px;border-radius:50%;background:${r.method.color}"></span>${esc(r.method.label)}</span></div>
+      </div>
+      <div class="card">
+        <ol style="padding-left:20px;font-size:14px;line-height:1.7;margin-bottom:12px"><li><b>«${esc(r.method.label)} да тўлаш»</b> тугмасини босинг ва тўловни амалга оширинг.</li><li>Қайтиб <b>«Тўладим»</b> тугмасини босинг — квитанция шу ерда чиқади.</li></ol>
+        ${r.mock ? note('warn', '<span>ℹ️</span><span>Демо: ҳавола намунавий, тўлов симуляция қилинади.</span>') : ''}
+        <button class="btn primary" style="background:${r.method.color};color:#fff" onclick="openLink('${r.checkout_url}')">🔗 ${esc(r.method.label)} да тўлаш</button>
+        <div class="btns"><button class="btn line" onclick="confirmPay()">Тўладим — тасдиқлаш</button></div>
+        <div style="margin-top:8px"><button class="btn danger" onclick="go('pay')">Бекор қилиш</button></div>
+      </div>`;
+  } catch (e) { $('payErr').innerHTML = note('err', esc(e.message)); b.disabled = false; b.textContent = 'Тўловга ўтиш'; }
+}
+function openLink(u) { try { Tg.openLink(u); } catch (e) { window.open(u, '_blank'); } }
+async function confirmPay() {
+  const btn = document.querySelector('#viewPay .btn.line'); if (btn) { btn.disabled = true; btn.textContent = 'Текширилмоқда…'; }
+  try {
+    const r = await api('POST', '/payments', { contract_id: pay.contract_id, amount: pay.amount, method: pay.method });
+    contractsCache = null; toast('Тўлов қабул қилинди');
+    $('viewPay').innerHTML = `<div class="stagger">
+      <div class="card" style="text-align:center;padding-top:22px"><div class="check">${I.ok}</div><h2 class="t" style="margin-bottom:2px">Тўлов қабул қилинди</h2><div style="font-size:26px;font-weight:800;letter-spacing:-.02em">${money(r.amount)}</div>
+        <div style="color:var(--muted);font-size:13.5px;margin-top:6px">Қолган қарз: <b style="color:var(--text)">${moneyT(r.remaining_debt)}</b>${r.closed ? '<br>🎉 Шартнома тўлиқ ёпилди!' : ''}</div></div>
+      <div class="card"><div class="eyebrow" style="margin-bottom:8px">Квитанция</div><div class="receipt">
+        <div class="kv"><span class="k">№</span><span class="v">${esc(r.receipt_no)}</span></div>
+        <div class="kv"><span class="k">Сана</span><span class="v">${r.date}</span></div>
+        <div class="kv"><span class="k">Шартнома</span><span class="v">${esc(r.contract_number)}</span></div>
+        <div class="kv"><span class="k">Сумма</span><span class="v">${money(r.amount)}</span></div>
+        <div class="kv"><span class="k">Усул</span><span class="v">${esc(r.method)}</span></div>
+        ${r.next_payment_date ? `<div class="kv"><span class="k">Кейинги тўлов</span><span class="v">${money(r.next_payment_amount)} · ${r.next_payment_date}</span></div>` : ''}
+      </div>${r.mock ? '<div style="margin-top:14px">' + note('warn', '<span>ℹ️</span><span>Демо: тўлов ҳақиқий эмас.</span>') + '</div>' : ''}</div>
+      <div class="btns" style="margin-top:0"><button class="btn ghost" onclick="go('schedule')">График</button><button class="btn ghost" onclick="go('payments')">Тўловлар</button></div>
+      <button class="btn primary" style="margin-top:10px" onclick="go('cabinet')">Кабинетга қайтиш</button></div>`;
+  } catch (e) { toast(e.message, 'err'); if (btn) { btn.disabled = false; btn.textContent = 'Тўладим — тасдиқлаш'; } }
+}
+
+/* ── payments history ──────────────────────────────────────────────── */
+async function loadPayments() {
+  load('viewPayments');
+  try {
+    const d = await api('GET', '/payments');
+    $('viewPayments').innerHTML = `<div class="stagger"><h2 class="t">Тўловлар</h2>
+      <div class="grid2"><div class="tile paid"><div class="l">Жами тўланган</div><div class="n">${money(d.total_paid)}</div></div><div class="tile late"><div class="l">Қолган қарз</div><div class="n">${money(d.remaining_debt)}</div></div></div>
+      <div class="eyebrow" style="margin:4px 2px 8px">Тарих · ${d.payments.length}</div>
+      ${d.payments.length ? d.payments.map(p => `<div class="card" style="padding:13px 16px"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px"><b class="num">${p.date}</b><b style="color:var(--paid)">${money(p.amount)}</b></div>
+        <div style="font-size:13px;color:var(--muted);margin-top:3px">${esc(p.contract_number)} · ${esc(p.method)} · ${esc(p.note || '')}</div>
+        <div style="font-size:12px;color:var(--faint);margin-top:2px" class="num">Квитанция ${esc(p.receipt_no)}</div></div>`).join('') : empty('🧾', 'Тўловлар йўқ', 'Биринчи тўловни ҳозир қилишингиз мумкин.')}
+      <button class="btn primary" onclick="go('pay')">${I.pay} Тўлов қилиш</button></div>`;
+  } catch (e) { $('viewPayments').innerHTML = note('err', esc(e.message)); }
+}
+
+/* ── purchases ─────────────────────────────────────────────────────── */
+async function loadPurchases() {
+  load('viewPurchases');
+  try {
+    const d = await api('GET', '/purchases');
+    if (!d.purchases.length) return $('viewPurchases').innerHTML = empty('🛍', 'Харидлар йўқ', 'Харидлар тарихи ҳали бўш.');
+    $('viewPurchases').innerHTML = `<div class="stagger"><h2 class="t">Харидлар</h2>
+      <div class="grid2"><div class="tile"><div class="l">Харидлар</div><div class="n num">${d.purchases.length} та</div></div><div class="tile"><div class="l">Жами сумма</div><div class="n">${money(d.total)}</div></div></div>
+      ${d.purchases.map(r => `<div class="card tap" role="button" tabindex="0" onclick="go('debt', ${r.contract_id})" onkeydown="if(event.key==='Enter')this.click()">
+        <div style="display:flex;justify-content:space-between;align-items:center"><b class="num">${r.date}</b><span style="font-size:12px;color:var(--muted)">${esc(r.branch)}</span></div>
+        <div style="font-size:12.5px;color:var(--muted);margin:2px 0 6px">Шартнома ${esc(r.contract_number)}</div>
+        ${r.products.map(p => `<div class="kv"><span>${esc(p.name)} <span style="color:var(--muted)">× ${p.qty}</span></span><span class="v">${money(p.sum)}</span></div>`).join('')}
+        <div class="kv"><span class="k">Жами</span><span class="v">${money(r.total)}</span></div></div>`).join('')}</div>`;
+  } catch (e) { $('viewPurchases').innerHTML = note('err', esc(e.message)); }
+}
+
+/* ── help ──────────────────────────────────────────────────────────── */
+async function loadHelp() {
+  load('viewHelp');
+  try {
+    const i = await api('GET', '/company');
+    const tel = s => 'tel:' + s.replace(/\s/g, '');
+    $('viewHelp').innerHTML = `<div class="stagger"><h2 class="t">Ёрдам</h2>
+      <div class="btns" style="margin:0 0 12px"><a class="btn primary" href="${tel(i.operator_phone)}" style="text-decoration:none">${I.help} Операторга қўнғироқ</a><a class="btn ghost" href="https://t.me/${esc(i.operator_username.replace('@', ''))}" target="_blank" rel="noopener" style="text-decoration:none">Telegram</a></div>
+      <div class="card"><h3 class="t">Мурожаат ёки савол</h3>
+        <div class="chips" role="tablist"><button class="chip active" id="k_request" onclick="setKind('request')">Мурожаат</button><button class="chip" id="k_question" onclick="setKind('question')">Савол / таклиф</button></div>
+        <div class="field"><textarea class="input" id="reqText" placeholder="Матнни шу ерга ёзинг…" maxlength="1000"></textarea></div>
+        <div id="reqMsg"></div>
+        <button class="btn primary" onclick="sendRequest()">Юбориш</button>
+      </div>
+      <div class="card"><h3 class="t">${esc(i.name)}</h3>
+        <div class="kv"><span class="k">Телефон</span><a class="v lnk num" href="${tel(i.phone)}">${esc(i.phone)}</a></div>
+        <div class="kv"><span class="k">Оператор</span><a class="v lnk num" href="${tel(i.operator_phone)}">${esc(i.operator_phone)}</a></div>
+        <div class="kv"><span class="k">Email</span><a class="v lnk" href="mailto:${esc(i.email)}">${esc(i.email)}</a></div>
+        <div class="kv"><span class="k">Манзил</span><span class="v" style="font-weight:500">${esc(i.address)}</span></div>
+        <div class="kv"><span class="k">Иш вақти</span><span class="v" style="font-weight:500">${esc(i.working_hours)}</span></div>
+      </div>
+      <div class="eyebrow" style="margin:4px 2px 8px">Филиаллар · ${i.branches.length}</div>
+      ${i.branches.map(b => `<div class="card" style="padding:13px 16px"><b>${esc(b.name)}</b><div style="font-size:13px;color:var(--muted);margin-top:4px;line-height:1.6">📍 ${esc(b.address)}<br><a class="lnk num" href="${tel(b.phone)}">${esc(b.phone)}</a> · 🕘 ${esc(b.hours)}</div></div>`).join('')}</div>`;
+    reqKind = 'request';
+  } catch (e) { $('viewHelp').innerHTML = note('err', esc(e.message)); }
+}
+let reqKind = 'request';
+function setKind(k) { reqKind = k; ['request', 'question'].forEach(x => $('k_' + x).classList.toggle('active', x === k)); haptic('tap'); }
+async function sendRequest() {
+  const text = $('reqText').value.trim();
+  if (!text) { $('reqMsg').innerHTML = note('err', 'Матн киритинг.'); $('reqText').focus(); return; }
+  try {
+    const r = await api('POST', '/requests', { kind: reqKind, text });
+    $('reqText').value = ''; toast('Юборилди');
+    $('reqMsg').innerHTML = note('ok', `<span>✓</span><span>${reqKind === 'request' ? 'Мурожаатингиз' : 'Саволингиз'} қабул қилинди (№ ${r.id}). Оператор тез орада боғланади.</span>`);
+  } catch (e) { $('reqMsg').innerHTML = note('err', esc(e.message)); }
+}
+
+/* ── promo ─────────────────────────────────────────────────────────── */
+async function loadPromo(kind, soft) {
+  if (!soft) load('viewPromo');
+  try {
+    const d = await api('GET', '/promotions');
+    const T = [['all', 'Барчаси'], ['promo', 'Акциялар'], ['new', 'Янги товарлар'], ['special', 'Махсус'], ['news', 'Хабарлар']];
+    const items = kind === 'all' ? d.items : d.items.filter(i => i.type === kind);
+    $('viewPromo').innerHTML = `<h2 class="t">Акциялар ва хабарлар</h2>
+      <div class="chips" role="tablist">${T.map(([k, l]) => `<button class="chip ${kind === k ? 'active' : ''}" onclick="loadPromo('${k}', true)">${l}</button>`).join('')}</div>
+      <div class="stagger">${items.length ? items.map(i => `<div class="card promo promo-${i.type}"><b>${esc(i.title)}</b><p style="font-size:14px;margin-top:4px;color:var(--text)">${esc(i.text)}</p>${i.valid_until ? `<div style="font-size:12px;color:var(--muted);margin-top:8px">Муддати: ${esc(i.valid_until)}</div>` : ''}</div>`).join('') : empty('🎁', 'Ҳозирча йўқ', 'Янги акциялар пайдо бўлганда шу ерда кўринади.')}</div>`;
+  } catch (e) { $('viewPromo').innerHTML = note('err', esc(e.message)); }
+}
+
+/* ── more ──────────────────────────────────────────────────────────── */
+function loadMore() {
+  const items = [['payments', '🧾', 'Тўловлар', 'Тарих ва квитанциялар'], ['purchases', '🛍', 'Харидлар', 'Товарлар ва шартномалар'], ['promo', '🎁', 'Акциялар', 'Янгиликлар ва таклифлар'], ['help', '📞', 'Ёрдам', 'Оператор, мурожаат, филиаллар']];
+  $('viewMore').innerHTML = `<h2 class="t">Кўпроқ</h2><div class="menu stagger">${items.map(([k, e, t, s]) => `<div class="card tap" role="button" tabindex="0" onclick="go('${k}')" onkeydown="if(event.key==='Enter')this.click()"><span class="em">${e}</span><span class="t"><b>${t}</b><small>${s}</small></span><span class="arr">›</span></div>`).join('')}
+    <button class="btn danger" onclick="doLogout()">Чиқиш</button></div>`;
+}
+
+/* ── init ──────────────────────────────────────────────────────────── */
+async function init() {
+  load('viewCabinet');
+  try {
+    user = await api('GET', '/user');
+    setHeader(user.company_name, user.client_id);
+    if (user.mock) $('mockBadge').style.display = '';
+    if (user.registered) $('railOut').style.display = '';
+    const [h, harg] = (location.hash || '').slice(1).split('/');
+    const known = ['cabinet','debt','schedule','pay','payments','purchases','help','promo','more'];
+    go(user.registered ? (known.includes(h) ? h : 'cabinet') : 'register', harg ? Number(harg) : undefined);
+  } catch (e) {
+    $('viewCabinet').innerHTML = empty('🔒', 'Кириш имкони йўқ', esc(e.message) + '. Ботда /getsession буйруғи орқали янги ҳавола олинг ёки илова­ни Telegram ичидан очинг.');
   }
 }
-
 init();
 </script>
 </body>

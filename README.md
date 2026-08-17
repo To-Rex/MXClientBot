@@ -129,23 +129,21 @@ Access at `http://localhost:8000/panel` (login required)
 ```
 
 ### User Flow
-1. **`/start`** → Send phone number (contact button)
-2. **Registration** → Calls `POST /hs/client_bot/api/checkNumber` with phone (`{"phoneNumber", "chatID"}` → `{"id", "name"}`)
-3. **Profile** → Calls `GET /hs/agent/api/get_client_info` — client details with images
-4. **Info** → Company info, branch, group, agent, status
-5. **Products** → Browse by category, image + price + stock per product
-   - Categories as inline keyboard, switching clears previous messages
-   - Each product has **🛒 Buyurtma berish** button
-6. **Orders** → Place orders with quantity input + cancel button
-   - **✏️ Tahrirlash** — edit order quantity
-   - **🗑 O'chirish** — delete order with confirmation
-7. **Akt sverka** → Reconciliation report with 1/2/3 month period selector
-   - Switching periods clears previous report, keeps selector in place
-   - **🛒 Buyurtma** (debit) / **💰 To'lov** (credit) labels
+1. **`/start`** → Телефон рақамини юбориш (contact button)
+2. **Рўйхатдан ўтиш** → `POST /hs/client_bot/api/checkNumber` (`{phoneNumber, chatID}` → `{id, name}`)
+3. **Асосий меню:** 💳 Қарзим | 📅 Графигим | 💰 Тўлов қилиш | 🧾 Тўловлар | 🛍 Харидлар | 👤 Кабинет | 📞 Ёрдам | 🎁 Акциялар | 🚪 Чиқиш
+   - **👤 Кабинет** — Ф.И.О, телефон, статус, амалдаги шартномалар, умумий насия, қолган қарз, эслатмаларни ёқиш/ўчириш
+   - **💳 Қарзим** — шартномалар → товарлар, насия суммаси, бошланғич тўлов, муддат, қолган қарз
+   - **📅 Графигим** — келгуси тўлов + график (Барчаси / Тўланган / Кутилаётган / Муддати ўтган)
+   - **💰 Тўлов қилиш** — шартнома → сумма → тасдиқ → квитанция, қарз автоматик янгиланади
+   - **🧾 Тўловлар** — жами тўланган, тўловлар тарихи (сана, сумма, усул, квитанция)
+   - **🛍 Харидлар** — товарлар, сана, сумма, шартнома рақами
+   - **📞 Ёрдам** — оператор, мурожаат, савол/таклиф, контактлар, филиаллар
+   - **🎁 Акциялар** — акциялар, янги товарлар, махсус таклифлар, хабарлар
+4. **Эслатмалар** (`app/services/reminders.py`) — тўловга 3 кун қолганда, тўлов куни, кечикканда (`REMINDER_INTERVAL`)
 
-### Cancellation
-- Quantity input shows **❌ Bekor qilish** button
-- `/start` clears any active FSM state
+> **Маълумот манбаи:** `app/services/nasiya_api.py` — ҳозирча **mock** (`NASIYA_MOCK=1`, in-memory).
+> 1C endpointлари тайёр бўлганда шу сервис методлари реал API га уланади — handlerлар ўзгармайди.
 
 ### APIs Integrated
 

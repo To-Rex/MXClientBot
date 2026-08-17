@@ -1,3 +1,11 @@
+"""MX Nasiya Telegram bot — client's installment (nasiya) personal cabinet.
+
+Sections (TZ):
+  1. Login (phone → 1C checkNumber)          — unchanged, production
+  2. 👤 Кабинет   3. 💳 Қарзим   4. 📅 Графигим   5. 💰 Тўлов қилиш / 🧾 Тўловлар
+  6. 🛍 Харидлар  7. Эслатмалар (reminders task)  8. 📞 Ёрдам  9. 🎁 Акциялар
+Data comes from ``NasiyaService`` (mock now, 1C later) — handlers stay the same.
+"""
 import logging
 import secrets
 from datetime import datetime, timedelta, timezone
@@ -11,95 +19,60 @@ from aiogram.types import (
     CallbackQuery,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
-    InputMediaPhoto,
     KeyboardButton,
     Message,
     ReplyKeyboardMarkup,
 )
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import async_sessionmaker, AsyncSession
 
 from app.config import WEBAPP_URL
 from app.models import CartItem, User, WebSession
 from app.services.api import APIService
+from app.services.nasiya_api import NasiyaService
 
 SESSION_TTL_HOURS = 24 * 30  # 30 days
 
 logger = logging.getLogger(__name__)
 
-# Track product messages per chat to delete when switching groups
-_product_msg_ids: dict[int, list[int]] = {}
-# Track akt sverka messages per chat to delete when switching periods
-_akt_msg_ids: dict[int, list[int]] = {}
+# ── menu labels (TZ) ────────────────────────────────────────────────────────
+BTN_DEBT = "💳 Қарзим"
+BTN_SCHEDULE = "📅 Графигим"
+BTN_PAY = "💰 Тўлов қилиш"
+BTN_PAYMENTS = "🧾 Тўловлар"
+BTN_PURCHASES = "🛍 Харидлар"
+BTN_CABINET = "👤 Кабинет"
+BTN_HELP = "📞 Ёрдам"
+BTN_PROMO = "🎁 Акциялар"
+BTN_LOGOUT = "🚪 Чиқиш"
+BTN_CANCEL = "❌ Бекор қилиш"
+BTN_SEND_PHONE = "📱 Телефон рақамни юбориш"
 
+fmt_money = NasiyaService.fmt_money
+fmt_date = NasiyaService.fmt_date
 
-PROFILE_FIELD_LABELS = {
-    "name": "Ism",
-    "group": "Guruh",
-    "branch": "Filial",
-    "address": "Manzil",
-    "category": "Kategoriya",
-    "phone": "Telefon",
-    "agent": "Agent",
-    "status": "Status",
-    "visit_days": "Tashrif kunlari",
-    "activity_types": "Faoliyat turlari",
+STATUS_ICON = {"paid": "✅", "pending": "⏳", "overdue": "🔴"}
+
+# Payment providers (demo): key -> (label, demo checkout url)
+PAY_METHODS = {
+    "payme": ("Payme", "https://checkout.paycom.uz/"),
+    "click": ("Click", "https://my.click.uz/"),
+    "paynet": ("Paynet", "https://app.paynet.uz/"),
 }
-
-IMAGE_FIELD_NAMES = ("images", "photos", "rasmlar", "photos_list")
-
-
-class EditOrderState(StatesGroup):
-    waiting_edit_qty = State()
+CONTRACT_STATUS = {"active": "🟢 Фаол", "overdue": "🔴 Кечиккан", "closed": "✅ Ёпилган"}
 
 
-class OrderState(StatesGroup):
-    waiting_qty = State()
-
-class CartState(StatesGroup):
-    waiting_cart_qty = State()
-
-class ComplaintState(StatesGroup):
-    waiting_note = State()
-    waiting_comment = State()
+class PayState(StatesGroup):
+    waiting_amount = State()
+    waiting_confirm = State()
 
 
-def _format_profile(profile: dict) -> str:
-    lines = ["<b>👤 Mening profilim</b>\n"]
-    shown_labels = set()
-
-    for field, label in PROFILE_FIELD_LABELS.items():
-        value = profile.get(field)
-        if value is not None and value != "":
-            lines.append(f"▪️ <b>{label}:</b> {value}")
-            shown_labels.add(label)
-
-    for field, value in profile.items():
-        if field in PROFILE_FIELD_LABELS:
-            continue
-        if field in IMAGE_FIELD_NAMES:
-            continue
-        if field in ("client_id", "id"):
-            continue
-        if value is not None and value != "" and isinstance(value, (str, int, float)):
-            label = field.replace("_", " ").title()
-            if label not in shown_labels:
-                lines.append(f"▪️ <b>{label}:</b> {value}")
-                shown_labels.add(label)
-
-    return "\n".join(lines)
+class SupportState(StatesGroup):
+    waiting_request = State()
+    waiting_question = State()
 
 
-def _extract_images(profile: dict) -> list[str]:
-    for field in IMAGE_FIELD_NAMES:
-        value = profile.get(field)
-        if isinstance(value, list) and value:
-            return [str(img) for img in value if img]
-        if isinstance(value, str) and value.strip():
-            return [value.strip()]
-    return []
-
-
+# ── DB helpers (login flow — unchanged) ─────────────────────────────────────
 async def _get_user(
     session_factory: async_sessionmaker[AsyncSession],
     telegram_id: int,
@@ -143,136 +116,69 @@ async def _save_user(
         await session.commit()
 
 
+def main_menu_keyboard() -> ReplyKeyboardMarkup:
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text=BTN_DEBT), KeyboardButton(text=BTN_SCHEDULE)],
+            [KeyboardButton(text=BTN_PAY), KeyboardButton(text=BTN_PAYMENTS)],
+            [KeyboardButton(text=BTN_PURCHASES), KeyboardButton(text=BTN_CABINET)],
+            [KeyboardButton(text=BTN_HELP), KeyboardButton(text=BTN_PROMO)],
+            [KeyboardButton(text=BTN_LOGOUT)],
+        ],
+        resize_keyboard=True,
+    )
+
+
+def phone_keyboard() -> ReplyKeyboardMarkup:
+    return ReplyKeyboardMarkup(
+        keyboard=[[KeyboardButton(text=BTN_SEND_PHONE, request_contact=True)]],
+        resize_keyboard=True,
+        one_time_keyboard=True,
+    )
+
+
+def cancel_keyboard() -> ReplyKeyboardMarkup:
+    return ReplyKeyboardMarkup(
+        keyboard=[[KeyboardButton(text=BTN_CANCEL)]],
+        resize_keyboard=True,
+    )
+
+
+def _progress_bar(done: float, total: float, width: int = 10) -> str:
+    if total <= 0:
+        return "░" * width
+    filled = int(round(width * min(done, total) / total))
+    return "█" * filled + "░" * (width - filled)
+
+
+def _human_days(days: Optional[int]) -> str:
+    if days is None:
+        return ""
+    if days < 0:
+        return f"{-days} кун кечиккан"
+    if days == 0:
+        return "бугун"
+    if days == 1:
+        return "эртага"
+    return f"{days} кундан кейин"
+
+
 def create_router(
     bot_config: dict,
     session_factory: async_sessionmaker[AsyncSession],
 ) -> Router:
     router = Router()
     api_service = APIService()
+    svc = NasiyaService()
 
     bot_id = bot_config["id"]
-
-    async def _cart_items(telegram_id: int) -> list[CartItem]:
-        async with session_factory() as session:
-            result = await session.execute(
-                select(CartItem)
-                .where(
-                    CartItem.bot_id == bot_id,
-                    CartItem.telegram_id == telegram_id,
-                )
-                .order_by(CartItem.created_at, CartItem.id)
-            )
-            return list(result.scalars().all())
-
-    async def _cart_count(telegram_id: int) -> int:
-        async with session_factory() as session:
-            result = await session.execute(
-                select(func.count(CartItem.id)).where(
-                    CartItem.bot_id == bot_id,
-                    CartItem.telegram_id == telegram_id,
-                )
-            )
-            return int(result.scalar() or 0)
-
-    async def _cart_total(telegram_id: int) -> float:
-        async with session_factory() as session:
-            result = await session.execute(
-                select(func.coalesce(func.sum(CartItem.price * CartItem.qty), 0.0)).where(
-                    CartItem.bot_id == bot_id,
-                    CartItem.telegram_id == telegram_id,
-                )
-            )
-            return float(result.scalar() or 0.0)
-
-    async def _cart_get_item(telegram_id: int, product_id: int) -> Optional[CartItem]:
-        async with session_factory() as session:
-            result = await session.execute(
-                select(CartItem).where(
-                    CartItem.bot_id == bot_id,
-                    CartItem.telegram_id == telegram_id,
-                    CartItem.product_id == product_id,
-                )
-            )
-            return result.scalar_one_or_none()
-
-    async def _cart_upsert(
-        telegram_id: int,
-        product_id: int,
-        name: str,
-        price: float,
-        qty: float,
-        mode: str,
-    ) -> CartItem:
-        async with session_factory() as session:
-            result = await session.execute(
-                select(CartItem).where(
-                    CartItem.bot_id == bot_id,
-                    CartItem.telegram_id == telegram_id,
-                    CartItem.product_id == product_id,
-                )
-            )
-            item = result.scalar_one_or_none()
-            if item:
-                if mode == "edit":
-                    item.qty = qty
-                else:
-                    item.qty = float(item.qty) + qty
-                item.price = price
-                item.product_name = name
-            else:
-                item = CartItem(
-                    bot_id=bot_id,
-                    telegram_id=telegram_id,
-                    product_id=product_id,
-                    product_name=name,
-                    price=price,
-                    qty=qty,
-                )
-                session.add(item)
-            await session.commit()
-            await session.refresh(item)
-            return item
-
-    async def _cart_remove_item(telegram_id: int, product_id: int) -> Optional[CartItem]:
-        async with session_factory() as session:
-            result = await session.execute(
-                select(CartItem).where(
-                    CartItem.bot_id == bot_id,
-                    CartItem.telegram_id == telegram_id,
-                    CartItem.product_id == product_id,
-                )
-            )
-            item = result.scalar_one_or_none()
-            if not item:
-                return None
-            removed_snapshot = CartItem(
-                bot_id=item.bot_id,
-                telegram_id=item.telegram_id,
-                product_id=item.product_id,
-                product_name=item.product_name,
-                price=item.price,
-                qty=item.qty,
-            )
-            await session.delete(item)
-            await session.commit()
-            return removed_snapshot
-
-    async def _cart_clear(telegram_id: int) -> int:
-        async with session_factory() as session:
-            result = await session.execute(
-                delete(CartItem).where(
-                    CartItem.bot_id == bot_id,
-                    CartItem.telegram_id == telegram_id,
-                )
-            )
-            await session.commit()
-            return result.rowcount or 0
+    creds = (bot_config["base_url"], bot_config["one_c_login"], bot_config["one_c_password"])
 
     async def _logout_user(telegram_id: int):
         async with session_factory() as session:
             stmt = select(User).where(
                 User.telegram_id == telegram_id,
-                User.bot_id == bot_config["id"],
+                User.bot_id == bot_id,
             )
             result = await session.execute(stmt)
             user = result.scalar_one_or_none()
@@ -282,65 +188,61 @@ def create_router(
             await session.execute(
                 delete(WebSession).where(
                     WebSession.telegram_id == telegram_id,
-                    WebSession.bot_id == bot_config["id"],
+                    WebSession.bot_id == bot_id,
                 )
             )
             await session.execute(
                 delete(CartItem).where(
                     CartItem.telegram_id == telegram_id,
-                    CartItem.bot_id == bot_config["id"],
+                    CartItem.bot_id == bot_id,
                 )
             )
             await session.commit()
 
-    async def _main_menu_keyboard(telegram_id: int) -> ReplyKeyboardMarkup:
-        count = await _cart_count(telegram_id)
-        cart_label = f"🛒 Savat ({count})" if count > 0 else "🛒 Savat"
-        return ReplyKeyboardMarkup(
-            keyboard=[
-                [KeyboardButton(text="👤 Profil"), KeyboardButton(text="ℹ️ Info")],
-                [KeyboardButton(text="📦 Mahsulotlar"), KeyboardButton(text="📋 Buyurtmalar")],
-                [KeyboardButton(text="💰 Balans"), KeyboardButton(text="📊 Akt sverka")],
-                [KeyboardButton(text=cart_label), KeyboardButton(text="✍️ Shikoyat")],
-                [KeyboardButton(text="🚪 Chiqish")],
-            ],
-            resize_keyboard=True,
-        )
+    async def _require_client(message: Message) -> Optional[str]:
+        """Return client_id or send the 'register first' hint."""
+        user = await _get_user(session_factory, message.from_user.id, bot_id)
+        if not user or not user.client_id:
+            await message.answer(
+                "❌ Аввал рўйхатдан ўтишингиз керак. Илтимос, /start буйруғини босинг."
+            )
+            return None
+        return user.client_id
 
+    async def _client_from_callback(callback: CallbackQuery) -> Optional[str]:
+        user = await _get_user(session_factory, callback.from_user.id, bot_id)
+        if not user or not user.client_id:
+            await callback.answer("❌ Аввал рўйхатдан ўтинг: /start", show_alert=True)
+            return None
+        return user.client_id
+
+    # ════════════════════════════════════════════════════════════════════
+    # 1. LOGIN — unchanged logic
+    # ════════════════════════════════════════════════════════════════════
     @router.message(Command("start"))
     async def start_handler(message: Message, state: FSMContext):
         await state.clear()
-        user = await _get_user(session_factory, message.from_user.id, bot_config["id"])
+        user = await _get_user(session_factory, message.from_user.id, bot_id)
+        company = bot_config["company_name"]
 
         if user and user.client_id:
-            company = bot_config["company_name"]
             await message.answer(
-                f"Assalomu alaykum! {company} botiga xush kelibsiz.\n\n"
-                "Menyudan kerakli bo'limni tanlang:",
-                reply_markup=await _main_menu_keyboard(message.from_user.id),
+                f"Ассалому алайкум! {company} ботига хуш келибсиз.\n\n"
+                "Бу — насия бўйича шахсий кабинетингиз. Менюдан керакли бўлимни танланг:",
+                reply_markup=main_menu_keyboard(),
             )
             return
 
-        keyboard = ReplyKeyboardMarkup(
-            keyboard=[
-                [KeyboardButton(text="📱 Telefon raqamni yuborish", request_contact=True)]
-            ],
-            resize_keyboard=True,
-            one_time_keyboard=True,
-        )
-        company = bot_config["company_name"]
         await message.answer(
-            f"Assalomu alaykum! {company} botiga xush kelibsiz.\n\n"
-            "Iltimos, telefon raqamingizni yuboring.",
-            reply_markup=keyboard,
+            f"Ассалому алайкум! {company} ботига хуш келибсиз.\n\n"
+            "Илтимос, телефон рақамингизни юборинг.",
+            reply_markup=phone_keyboard(),
         )
 
     @router.message(Command("getsession"))
     async def getsession_handler(message: Message):
         if not WEBAPP_URL:
-            await message.answer(
-                "⚠️ WEBAPP_URL sozlanmagan. Administrator bilan bog'laning."
-            )
+            await message.answer("⚠️ WEBAPP_URL созланмаган. Администратор билан боғланинг.")
             return
 
         token = secrets.token_urlsafe(32)
@@ -350,7 +252,7 @@ def create_router(
             ws = WebSession(
                 token=token,
                 telegram_id=message.from_user.id,
-                bot_id=bot_config["id"],
+                bot_id=bot_id,
                 first_name=message.from_user.first_name or "",
                 last_name=message.from_user.last_name or "",
                 username=message.from_user.username or "",
@@ -359,1327 +261,867 @@ def create_router(
             db.add(ws)
             await db.commit()
 
-        url = f"{WEBAPP_URL.rstrip('/')}/webapp?bot_id={bot_config['id']}&session={token}"
+        url = f"{WEBAPP_URL.rstrip('/')}/webapp?bot_id={bot_id}&session={token}"
         await message.answer(
-            "🔗 <b>Brauzer uchun shaxsiy havola</b>\n\n"
+            "🔗 <b>Браузер учун шахсий ҳавола</b>\n\n"
             f"<a href=\"{url}\">{url}</a>\n\n"
-            "Bu havolani hech kim bilan bo'lishmang. "
-            f"Muddati: {SESSION_TTL_HOURS // 24} kun.",
+            "Бу ҳаволани ҳеч ким билан бўлишманг. "
+            f"Муддати: {SESSION_TTL_HOURS // 24} кун.",
             disable_web_page_preview=True,
         )
 
-    @router.message(Command("logout"))
-    async def logout_command_handler(message: Message):
+    async def _do_logout(message: Message, state: FSMContext):
+        await state.clear()
         await _logout_user(message.from_user.id)
-        keyboard = ReplyKeyboardMarkup(
-            keyboard=[
-                [KeyboardButton(text="📱 Telefon raqamni yuborish", request_contact=True)]
-            ],
-            resize_keyboard=True,
-            one_time_keyboard=True,
-        )
         await message.answer(
-            "Siz tizimdan chiqdingiz.\n\n"
-            "Iltimos, qaytadan ro'yxatdan o'tish uchun telefon raqamingizni yuboring.",
-            reply_markup=keyboard,
+            "Сиз тизимдан чиқдингиз.\n\n"
+            "Қайтадан кириш учун телефон рақамингизни юборинг.",
+            reply_markup=phone_keyboard(),
         )
 
-    @router.message(F.text == "🚪 Chiqish")
-    async def logout_button_handler(message: Message):
-        await _logout_user(message.from_user.id)
-        keyboard = ReplyKeyboardMarkup(
-            keyboard=[
-                [KeyboardButton(text="📱 Telefon raqamni yuborish", request_contact=True)]
-            ],
-            resize_keyboard=True,
-            one_time_keyboard=True,
-        )
-        await message.answer(
-            "Siz tizimdan chiqdingiz.\n\n"
-            "Iltimos, qaytadan ro'yxatdan o'tish uchun telefon raqamingizni yuboring.",
-            reply_markup=keyboard,
-        )
+    @router.message(Command("logout"))
+    async def logout_command_handler(message: Message, state: FSMContext):
+        await _do_logout(message, state)
+
+    @router.message(F.text == BTN_LOGOUT)
+    async def logout_button_handler(message: Message, state: FSMContext):
+        await _do_logout(message, state)
 
     @router.message(F.contact)
-    async def contact_handler(message: Message):
+    async def contact_handler(message: Message, state: FSMContext):
         if message.contact is None:
             return
+        await state.clear()
 
         phone = message.contact.phone_number.lstrip("+").replace(" ", "").replace("-", "")
 
         logger.info(
             "🤖 Bot[%s] contact: telegram_id=%s phone=%s",
-            bot_config["id"], message.from_user.id, phone,
+            bot_id, message.from_user.id, phone,
         )
 
-        result = await api_service.register_device(
-            bot_config["base_url"],
-            bot_config["one_c_login"],
-            bot_config["one_c_password"],
-            phone,
-            str(message.chat.id),
-        )
+        result = await api_service.register_device(*creds, phone, str(message.chat.id))
 
         logger.info(
             "🤖 Bot[%s] register_device result: %s",
-            bot_config["id"],
+            bot_id,
             f"id={result.get('id')}" if result else "None",
         )
 
         if result and result.get("id"):
             client_id = str(result["id"])
 
-            await _save_user(
-                session_factory,
-                message.from_user.id,
-                bot_config["id"],
-                phone,
-                client_id,
-            )
+            await _save_user(session_factory, message.from_user.id, bot_id, phone, client_id)
+            # let the cabinet show the real name/phone from 1C
+            await svc.set_profile_basics(client_id, name=str(result.get("name") or ""), phone=phone)
 
+            name = result.get("name") or ""
+            hello = f"✅ Рўйхатдан муваффақиятли ўтдингиз{', ' + name if name else ''}!"
             await message.answer(
-                "✅ Ro'yxatdan muvaffaqiyatli o'tdingiz!",
-                reply_markup=await _main_menu_keyboard(message.from_user.id),
+                hello + "\n\nМенюдан керакли бўлимни танланг:",
+                reply_markup=main_menu_keyboard(),
             )
         else:
             await message.answer(
-                "❌ Siz topilmadingiz. Iltimos, qaytadan urinib ko'ring "
-                "yoki administrator bilan bog'laning."
+                "❌ Сиз топилмадингиз. Илтимос, қайтадан уриниб кўринг "
+                "ёки администратор билан боғланинг."
             )
 
-    @router.message(F.text == "👤 Profil")
-    async def profile_handler(message: Message):
-        user = await _get_user(session_factory, message.from_user.id, bot_config["id"])
-
-        if not user or not user.client_id:
-            await message.answer(
-                "❌ Avval ro'yxatdan o'tishingiz kerak. Iltimos, /start buyrug'ini bosing."
-            )
-            return
-
-        profile = await api_service.get_client_info(
-            bot_config["base_url"],
-            bot_config["one_c_login"],
-            bot_config["one_c_password"],
-            user.client_id,
-        )
-
-        if profile is None:
-            await message.answer(
-                "❌ Ma'lumotlarni olishda xatolik yuz berdi. Keyinroq urinib ko'ring."
-            )
-            return
-
-        if not profile:
-            await message.answer("❌ Profil ma'lumotlari topilmadi.")
-            return
-
-        text = _format_profile(profile)
-        await message.answer(text)
-
-        images = _extract_images(profile)
-        if images:
-            try:
-                media = [InputMediaPhoto(media=url) for url in images[:10]]
-                if media:
-                    await message.answer_media_group(media)
-            except Exception as e:
-                logger.error("Failed to send media group for bot %d: %s", bot_config["id"], e)
-
-    @router.message(F.text == "📦 Mahsulotlar")
-    async def products_handler(message: Message):
-        user = await _get_user(session_factory, message.from_user.id, bot_config["id"])
-        if not user or not user.client_id:
-            await message.answer(
-                "❌ Avval ro'yxatdan o'tishingiz kerak. Iltimos, /start buyrug'ini bosing."
-            )
-            return
-
-        data = await api_service.get_products(
-            bot_config["base_url"],
-            bot_config["one_c_login"],
-            bot_config["one_c_password"],
-        )
-
-        if not data or not data.get("data"):
-            await message.answer("❌ Mahsulotlar topilmadi.")
-            return
-
-        groups = data["data"]
-        buttons = []
-        for g in groups:
-            count = len(g.get("products", []))
-            label = f"{g['group_name']} ({count} ta)"
-            buttons.append([InlineKeyboardButton(
-                text=label,
-                callback_data=f"grp_{g['group_id']}",
-            )])
-
-        keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
-        await message.answer(
-            f"<b>📦 Mahsulot guruhlari</b>\nJami: {len(groups)} ta guruh",
-            reply_markup=keyboard,
-        )
-
-    async def _clear_product_messages(chat_id: int, bot):
-        msg_ids = _product_msg_ids.pop(chat_id, [])
-        for msg_id in msg_ids:
-            try:
-                await bot.delete_message(chat_id, msg_id)
-            except Exception:
-                pass
-
-    async def _send_product_batch(chat_id: int, bot, group: dict):
-        products = group.get("products", [])
-        group_id = group.get("group_id")
-        new_ids = []
-
-        for product in products:
-            product_id = product.get("id")
-            name = product.get("name", "Nomsiz")
-
-            price_val = 0.0
-            price_str = ""
-            prices = product.get("typePrice", [])
-            if prices:
-                p = prices[0]
-                price_val = float(p["price"])
-                price_str = f"{price_val:,.0f} {p['cry']}".replace(",", " ")
-
-            qty_str = ""
-            sklads = product.get("sklad", [])
-            if sklads:
-                s = sklads[0]
-                qty_str = f"Qoldiq: {s['qty']} ta"
-
-            status = product.get("status", "")
-            status_icon = {"green": "🟢", "red": "🔴", "yellow": "🟡"}.get(status, "")
-
-            caption = f"{status_icon} <b>{name}</b>\n💰 {price_str}\n📦 {qty_str}"
-
-            order_btn = InlineKeyboardButton(
-                text="🛒 Buyurtma berish",
-                callback_data=f"order_{product_id}_{price_val}",
-            )
-            cart_btn = InlineKeyboardButton(
-                text="➕ Savatga qo'shish",
-                callback_data=f"cadd_{group_id}_{product_id}_{price_val}",
-            )
-            # Direct-order button hidden — only cart-add visible; order_btn kept for future use
-            keyboard = InlineKeyboardMarkup(inline_keyboard=[[cart_btn]])
-
-            images = product.get("img", [])
-            if images:
-                url = images[0].get("URL", "")
-                if url:
-                    try:
-                        sent = await bot.send_photo(
-                            chat_id=chat_id,
-                            photo=url,
-                            caption=caption,
-                            reply_markup=keyboard,
-                        )
-                        new_ids.append(sent.message_id)
-                        continue
-                    except Exception:
-                        pass
-
-            sent = await bot.send_message(
-                chat_id=chat_id, text=caption, reply_markup=keyboard,
-            )
-            new_ids.append(sent.message_id)
-
-        _product_msg_ids[chat_id] = new_ids
-
-    @router.callback_query(F.data.startswith("grp_"))
-    async def products_group_callback(callback: CallbackQuery):
-        group_id = int(callback.data.split("_", 1)[1])
-
-        data = await api_service.get_products(
-            bot_config["base_url"],
-            bot_config["one_c_login"],
-            bot_config["one_c_password"],
-        )
-
-        if not data or not data.get("data"):
-            await callback.answer("❌ Mahsulotlar topilmadi.", show_alert=True)
-            return
-
-        group = next((g for g in data["data"] if g["group_id"] == group_id), None)
-        if not group:
-            await callback.answer("❌ Guruh topilmadi.", show_alert=True)
-            return
-
-        await callback.answer()
-
-        # Clear old product messages
-        await _clear_product_messages(callback.message.chat.id, callback.bot)
-
-        # Update navigation: show all groups with current highlighted
-        groups = data["data"]
-        buttons = []
-        for g in groups:
-            prefix = "✅ " if g["group_id"] == group_id else ""
-            count = len(g.get("products", []))
-            label = f"{prefix}{g['group_name']} ({count} ta)"
-            buttons.append([InlineKeyboardButton(
-                text=label,
-                callback_data=f"grp_{g['group_id']}",
-            )])
-
-        keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
-        group_name = group.get("group_name", "Guruh")
-        await callback.message.edit_text(
-            f"<b>📦 {group_name}</b>\nJami: {len(groups)} ta guruh",
-            reply_markup=keyboard,
-        )
-
-        # Send product messages with images
-        await _send_product_batch(callback.message.chat.id, callback.bot, group)
-
-    @router.callback_query(F.data.startswith("order_"))
-    async def order_callback(callback: CallbackQuery, state: FSMContext):
-        user = await _get_user(session_factory, callback.from_user.id, bot_config["id"])
-        if not user or not user.client_id:
-            await callback.answer("❌ Avval ro'yxatdan o'ting. /start", show_alert=True)
-            return
-
-        try:
-            _, product_id, price = callback.data.split("_", 2)
-            product_id = int(product_id)
-            price = float(price)
-        except (ValueError, IndexError):
-            await callback.answer("❌ Xatolik yuz berdi.", show_alert=True)
-            return
-
-        import re
-        caption = callback.message.html_text or ""
-        match = re.search(r"<b>(.+?)</b>", caption)
-        product_name = match.group(1) if match else "Mahsulot"
-
-        await state.update_data(product_id=product_id, price=price, product_name=product_name)
-        await state.set_state(OrderState.waiting_qty)
-
-        keyboard = ReplyKeyboardMarkup(
-            keyboard=[[KeyboardButton(text="❌ Bekor qilish")]],
-            resize_keyboard=True,
-            one_time_keyboard=True,
-        )
-        await callback.answer()
-        await callback.message.answer(
-            f"📦 <b>Miqdor kiriting</b>\n\n"
-            f"Mahsulot: <b>{product_name}</b>\n"
-            f"Narx: {price:,.0f} UZS\n\n"
-            "Nechta kerakligini raqamda yuboring.".replace(",", " "),
-            reply_markup=keyboard,
-        )
-
-    @router.message(OrderState.waiting_qty, F.text == "❌ Bekor qilish")
-    async def cancel_order_qty(message: Message, state: FSMContext):
-        await state.clear()
-        await message.answer("❌ Buyurtma bekor qilindi.", reply_markup=await _main_menu_keyboard(message.from_user.id))
-
-    @router.message(OrderState.waiting_qty)
-    async def process_qty(message: Message, state: FSMContext):
-        try:
-            qty = float(message.text.strip().replace(",", "."))
-            if qty <= 0:
-                raise ValueError
-        except ValueError:
-            await message.answer("❌ Iltimos, musbat raqam yuboring. Masalan: 3")
-            return
-
-        data = await state.get_data()
-        product_id = data["product_id"]
-        price = data["price"]
-        product_name = data.get("product_name", "Mahsulot")
-        await state.clear()
-
-        user = await _get_user(session_factory, message.from_user.id, bot_config["id"])
-
-        result = await api_service.create_order(
-            bot_config["base_url"],
-            bot_config["one_c_login"],
-            bot_config["one_c_password"],
-            client_id=int(user.client_id),
-            product_id=product_id,
-            price=price,
-            qty=qty,
-        )
-
-        if result and not result.get("error"):
-            order_id = result.get("id", "?")
-            total = price * qty
-            await message.answer(
-                f"✅ <b>Buyurtma qabul qilindi!</b>\n"
-                f"▪️ Mahsulot: {product_name}\n"
-                f"▪️ Buyurtma ID: {order_id}\n"
-                f"▪️ Miqdor: {qty:g} ta\n"
-                f"▪️ Jami: {total:,.0f} UZS".replace(",", " "),
-                reply_markup=await _main_menu_keyboard(message.from_user.id),
-            )
-        else:
-            error = (result or {}).get("error") or (result or {}).get("message", "Noma'lum xatolik")
-            await message.answer(f"❌ Buyurtma yuborilmadi: {error}")
-
-    async def _format_cart_text(telegram_id: int) -> str:
-        items = await _cart_items(telegram_id)
-        if not items:
-            return "🛒 <b>Savat bo'sh</b>\n\nMahsulotlar bo'limidan tovar qo'shing."
-        lines = ["🛒 <b>Savat</b>\n"]
-        total = 0.0
-        for idx, it in enumerate(items, 1):
-            price = float(it.price)
-            qty = float(it.qty)
-            item_sum = price * qty
-            total += item_sum
-            lines.append(
-                f"<b>{idx}.</b> {it.product_name}\n"
-                f"   {qty:g} ta × {price:,.0f} = "
-                f"{item_sum:,.0f} UZS".replace(",", " ")
-            )
+    # ════════════════════════════════════════════════════════════════════
+    # 2. 👤 КАБИНЕТ
+    # ════════════════════════════════════════════════════════════════════
+    def _cabinet_text(cab: dict) -> str:
+        lines = [
+            "<b>👤 Шахсий кабинет</b>\n",
+            f"▪️ <b>Ф.И.О:</b> {cab.get('name') or '—'}",
+            f"▪️ <b>Телефон:</b> +{cab.get('phone')}" if cab.get("phone") else "▪️ <b>Телефон:</b> —",
+            f"▪️ <b>Статус:</b> {cab.get('status', '—')}",
+            f"▪️ <b>Мижоз ID:</b> {cab.get('client_id')}",
+            f"▪️ <b>Мижоз бўлган сана:</b> {cab.get('registered_at', '—')}",
+            "",
+            f"📄 <b>Амалдаги шартномалар:</b> {cab['active_contracts']} та (жами {cab['total_contracts']})",
+            f"💵 <b>Умумий насия суммаси:</b> {fmt_money(cab['total_nasiya'])}",
+            f"✅ <b>Тўланган:</b> {fmt_money(cab['total_paid'])}",
+            f"💳 <b>Қолган қарз:</b> {fmt_money(cab['remaining_debt'])}",
+        ]
+        if cab["overdue_amount"] > 0:
+            lines.append(f"🔴 <b>Муддати ўтган:</b> {fmt_money(cab['overdue_amount'])} ({cab['overdue_count']} та тўлов)")
         lines.append("")
-        lines.append(f"━━━━━━━━━━━━━━")
-        lines.append(f"<b>Jami: {total:,.0f} UZS</b>".replace(",", " "))
+        lines.append(f"🔔 Эслатмалар: {'ёқилган' if cab.get('reminders_enabled') else 'ўчирилган'}")
         return "\n".join(lines)
 
-    async def _build_cart_keyboard(telegram_id: int) -> Optional[InlineKeyboardMarkup]:
-        items = await _cart_items(telegram_id)
-        if not items:
-            return None
-        rows = []
-        for it in items:
-            name_short = it.product_name
-            if len(name_short) > 22:
-                name_short = name_short[:21] + "…"
-            qty = float(it.qty)
-            rows.append([
-                InlineKeyboardButton(
-                    text=f"✏️ {name_short} ({qty:g} ta)",
-                    callback_data=f"cqty_{it.product_id}",
-                ),
-                InlineKeyboardButton(
-                    text="🗑",
-                    callback_data=f"crm_{it.product_id}",
-                ),
-            ])
-        rows.append([
-            InlineKeyboardButton(text="🧹 Tozalash", callback_data="cclear"),
-            InlineKeyboardButton(text="✅ Buyurtma berish", callback_data="csubmit"),
+    def _cabinet_kb(cab: dict) -> InlineKeyboardMarkup:
+        toggle = "🔕 Эслатмаларни ўчириш" if cab.get("reminders_enabled") else "🔔 Эслатмаларни ёқиш"
+        return InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="📄 Шартномаларим", callback_data="debt_list"),
+             InlineKeyboardButton(text="📅 Кейинги тўлов", callback_data="sched_next")],
+            [InlineKeyboardButton(text=toggle, callback_data="cab_toggle_rem")],
         ])
+
+    @router.message(F.text == BTN_CABINET)
+    async def cabinet_handler(message: Message):
+        client_id = await _require_client(message)
+        if not client_id:
+            return
+        cab = await svc.get_cabinet(*creds, client_id)
+        if not cab:
+            await message.answer("❌ Маълумот олинмади. Кейинроқ уриниб кўринг.")
+            return
+        await message.answer(_cabinet_text(cab), reply_markup=_cabinet_kb(cab))
+
+    @router.callback_query(F.data == "cab_toggle_rem")
+    async def cabinet_toggle_reminders(callback: CallbackQuery):
+        client_id = await _client_from_callback(callback)
+        if not client_id:
+            return
+        cab = await svc.get_cabinet(*creds, client_id)
+        await svc.set_reminders(client_id, not cab.get("reminders_enabled"))
+        cab = await svc.get_cabinet(*creds, client_id)
+        await callback.answer("Эслатмалар ёқилди 🔔" if cab["reminders_enabled"] else "Эслатмалар ўчирилди 🔕")
+        try:
+            await callback.message.edit_text(_cabinet_text(cab), reply_markup=_cabinet_kb(cab))
+        except Exception:
+            pass
+
+    # ════════════════════════════════════════════════════════════════════
+    # 3. 💳 ҚАРЗИМ — contracts & debt
+    # ════════════════════════════════════════════════════════════════════
+    def _contracts_overview(contracts: list[dict]) -> tuple[str, InlineKeyboardMarkup]:
+        total_debt = sum(c["remaining_debt"] for c in contracts)
+        overdue = sum(c["overdue_amount"] for c in contracts)
+        active = [c for c in contracts if c["status"] != "closed"]
+        lines = [
+            "<b>💳 Қарзим</b>\n",
+            f"💵 <b>Умумий қолган қарз:</b> {fmt_money(total_debt)}",
+            f"📄 <b>Фаол шартномалар:</b> {len(active)} та",
+        ]
+        if overdue > 0:
+            lines.append(f"🔴 <b>Муддати ўтган:</b> {fmt_money(overdue)}")
+        lines.append("\nШартнома бўйича батафсил кўриш учун танланг:")
+        buttons = []
+        for c in contracts:
+            icon = CONTRACT_STATUS[c["status"]].split()[0]
+            buttons.append([InlineKeyboardButton(
+                text=f"{icon} {c['number']} — {fmt_money(c['remaining_debt'])}",
+                callback_data=f"ct_{c['contract_id']}",
+            )])
+        buttons.append([InlineKeyboardButton(text="💰 Тўлов қилиш", callback_data="pay_start")])
+        return "\n".join(lines), InlineKeyboardMarkup(inline_keyboard=buttons)
+
+    def _contract_text(c: dict) -> str:
+        lines = [
+            f"<b>📄 Шартнома {c['number']}</b>",
+            f"Ҳолати: {CONTRACT_STATUS[c['status']]}",
+            f"Сана: {fmt_date(c['date'])}  •  Филиал: {c.get('branch', '—')}",
+            "",
+            "<b>🛍 Товарлар:</b>",
+        ]
+        for p in c["products"]:
+            lines.append(f"  • {p['name']} × {p['qty']} — {fmt_money(p['sum'])}")
+        paid_total = c["paid"] + c["initial_payment"]
+        pct = min(100, round(paid_total / c["total"] * 100)) if c["total"] else 0
+        lines += [
+            "",
+            f"💵 <b>Насия суммаси:</b> {fmt_money(c['total'])}",
+            f"💰 <b>Бошланғич тўлов:</b> {fmt_money(c['initial_payment'])}",
+            f"📆 <b>Муддат:</b> {c['months']} ой  •  ойига {fmt_money(c['monthly_payment'])}",
+            f"🗓 <b>Якуний сана:</b> {fmt_date(c['end_date'])}",
+            f"✅ <b>Тўланган:</b> {fmt_money(paid_total)} ({c['paid_count']}/{c['months']} тўлов)",
+            f"💳 <b>Қолган қарз:</b> {fmt_money(c['remaining_debt'])}",
+            f"{_progress_bar(paid_total, c['total'])} {pct}%",
+        ]
+        if c["overdue_amount"] > 0:
+            lines.append(f"🔴 <b>Муддати ўтган:</b> {fmt_money(c['overdue_amount'])} ({c['overdue_count']} та)")
+        if c["next_payment_date"]:
+            lines.append(
+                f"⏭ <b>Кейинги тўлов:</b> {fmt_money(c['next_payment_amount'])} — "
+                f"{fmt_date(c['next_payment_date'])} ({_human_days(c['days_to_next'])})"
+            )
+        return "\n".join(lines)
+
+    def _contract_kb(c: dict) -> InlineKeyboardMarkup:
+        rows = [[InlineKeyboardButton(text="📅 Графиги", callback_data=f"sched_ct_{c['contract_id']}")]]
+        if c["status"] != "closed":
+            rows[0].append(InlineKeyboardButton(text="💰 Тўлаш", callback_data=f"pay_ct_{c['contract_id']}"))
+        rows.append([InlineKeyboardButton(text="⬅️ Шартномалар", callback_data="debt_list")])
         return InlineKeyboardMarkup(inline_keyboard=rows)
 
-    @router.callback_query(F.data.startswith("cadd_"))
-    async def cart_add_callback(callback: CallbackQuery, state: FSMContext):
-        user = await _get_user(session_factory, callback.from_user.id, bot_config["id"])
-        if not user or not user.client_id:
-            await callback.answer("❌ Avval ro'yxatdan o'ting. /start", show_alert=True)
+    @router.message(F.text == BTN_DEBT)
+    async def debt_handler(message: Message):
+        client_id = await _require_client(message)
+        if not client_id:
             return
-
-        try:
-            parts = callback.data.split("_")
-            if len(parts) == 4:
-                _, group_id_s, product_id_s, price_s = parts
-                group_id = int(group_id_s)
-            elif len(parts) == 3:
-                _, product_id_s, price_s = parts
-                group_id = None
-            else:
-                raise ValueError("Bad callback format")
-            product_id = int(product_id_s)
-            price = float(price_s)
-        except (ValueError, IndexError):
-            await callback.answer("❌ Xatolik yuz berdi.", show_alert=True)
+        contracts = await svc.get_contracts(*creds, client_id)
+        if not contracts:
+            await message.answer("📄 Сизда насия шартномалари йўқ.")
             return
-
-        import re
-        caption = callback.message.html_text or ""
-        match = re.search(r"<b>(.+?)</b>", caption)
-        product_name = match.group(1) if match else "Mahsulot"
-
-        existing_item = await _cart_get_item(callback.from_user.id, product_id)
-        existing_qty = float(existing_item.qty) if existing_item else 0.0
-
-        await state.update_data(
-            cart_pid=product_id,
-            cart_price=price,
-            cart_name=product_name,
-            cart_mode="add",
-            cart_group_id=group_id,
-        )
-        await state.set_state(CartState.waiting_cart_qty)
-
-        keyboard = ReplyKeyboardMarkup(
-            keyboard=[[KeyboardButton(text="❌ Bekor qilish")]],
-            resize_keyboard=True,
-            one_time_keyboard=True,
-        )
-        await callback.answer()
-        extra = ""
-        if existing_qty:
-            extra = f"\n<i>Savatda hozir: {existing_qty:g} ta (yangi miqdor ustiga qo'shiladi)</i>"
-        await callback.message.answer(
-            f"➕ <b>Savatga qo'shish</b>\n\n"
-            f"Mahsulot: <b>{product_name}</b>\n"
-            f"Narx: {price:,.0f} UZS{extra}\n\n"
-            "Nechta qo'shishni raqamda yuboring.".replace(",", " "),
-            reply_markup=keyboard,
-        )
-
-    @router.callback_query(F.data.startswith("cqty_"))
-    async def cart_qty_edit_callback(callback: CallbackQuery, state: FSMContext):
-        try:
-            pid = int(callback.data.split("_", 1)[1])
-        except (ValueError, IndexError):
-            await callback.answer("❌ Xatolik yuz berdi.", show_alert=True)
-            return
-
-        item = await _cart_get_item(callback.from_user.id, pid)
-        if not item:
-            await callback.answer("❌ Mahsulot savatda topilmadi.", show_alert=True)
-            return
-
-        await state.update_data(
-            cart_pid=pid,
-            cart_price=float(item.price),
-            cart_name=item.product_name,
-            cart_mode="edit",
-        )
-        await state.set_state(CartState.waiting_cart_qty)
-
-        keyboard = ReplyKeyboardMarkup(
-            keyboard=[[KeyboardButton(text="❌ Bekor qilish")]],
-            resize_keyboard=True,
-            one_time_keyboard=True,
-        )
-        await callback.answer()
-        await callback.message.answer(
-            f"✏️ <b>Miqdorni o'zgartirish</b>\n\n"
-            f"Mahsulot: <b>{item.product_name}</b>\n"
-            f"Joriy miqdor: {float(item.qty):g} ta\n\n"
-            "Yangi miqdorni raqamda yuboring.",
-            reply_markup=keyboard,
-        )
-
-    @router.message(CartState.waiting_cart_qty, F.text == "❌ Bekor qilish")
-    async def cancel_cart_qty(message: Message, state: FSMContext):
-        await state.clear()
-        await message.answer("❌ Bekor qilindi.", reply_markup=await _main_menu_keyboard(message.from_user.id))
-
-    @router.message(CartState.waiting_cart_qty)
-    async def process_cart_qty(message: Message, state: FSMContext):
-        try:
-            qty = float(message.text.strip().replace(",", "."))
-            if qty <= 0:
-                raise ValueError
-        except ValueError:
-            await message.answer("❌ Iltimos, musbat raqam yuboring. Masalan: 3")
-            return
-
-        data = await state.get_data()
-        pid = data["cart_pid"]
-        price = data["cart_price"]
-        name = data.get("cart_name", "Mahsulot")
-        mode = data.get("cart_mode", "add")
-        await state.clear()
-
-        saved = await _cart_upsert(
-            telegram_id=message.from_user.id,
-            product_id=pid,
-            name=name,
-            price=price,
-            qty=qty,
-            mode=mode,
-        )
-        action_text = "✏️ Miqdor yangilandi" if mode == "edit" else "✅ Savatga qo'shildi"
-
-        total_count = await _cart_count(message.from_user.id)
-        cart_total = await _cart_total(message.from_user.id)
-        new_qty = float(saved.qty)
-
-        await message.answer(
-            f"{action_text}\n\n"
-            f"▪️ {name}\n"
-            f"▪️ Miqdor: {new_qty:g} ta\n"
-            f"▪️ Narx: {price:,.0f} UZS\n\n"
-            f"<b>Savatda: {total_count} ta tovar | "
-            f"{cart_total:,.0f} UZS</b>\n\n".replace(",", " ")
-            + "Buyurtma berish uchun «🛒 Savat» menyusiga o'ting.",
-            reply_markup=await _main_menu_keyboard(message.from_user.id),
-        )
-
-        group_id = data.get("cart_group_id")
-        if mode == "add" and group_id is not None:
-            try:
-                products_data = await api_service.get_products(
-                    bot_config["base_url"],
-                    bot_config["one_c_login"],
-                    bot_config["one_c_password"],
-                )
-                if products_data and products_data.get("data"):
-                    group = next(
-                        (g for g in products_data["data"] if g.get("group_id") == group_id),
-                        None,
-                    )
-                    if group:
-                        await _clear_product_messages(message.chat.id, message.bot)
-                        await _send_product_batch(message.chat.id, message.bot, group)
-            except Exception as e:
-                logger.error(
-                    "Failed to re-send products after cart add (bot=%d, group=%s): %s",
-                    bot_config["id"], group_id, e,
-                )
-
-    @router.message(F.text.startswith("🛒 Savat"))
-    async def cart_handler(message: Message):
-        user = await _get_user(session_factory, message.from_user.id, bot_config["id"])
-        if not user or not user.client_id:
-            await message.answer(
-                "❌ Avval ro'yxatdan o'tishingiz kerak. Iltimos, /start buyrug'ini bosing."
-            )
-            return
-
-        text = await _format_cart_text(message.from_user.id)
-        kb = await _build_cart_keyboard(message.from_user.id)
+        text, kb = _contracts_overview(contracts)
         await message.answer(text, reply_markup=kb)
 
-    @router.callback_query(F.data.startswith("crm_"))
-    async def cart_remove_callback(callback: CallbackQuery):
-        try:
-            pid = int(callback.data.split("_", 1)[1])
-        except (ValueError, IndexError):
-            await callback.answer("❌ Xatolik yuz berdi.", show_alert=True)
+    @router.callback_query(F.data == "debt_list")
+    async def debt_list_callback(callback: CallbackQuery):
+        client_id = await _client_from_callback(callback)
+        if not client_id:
             return
-
-        removed = await _cart_remove_item(callback.from_user.id, pid)
-        if not removed:
-            await callback.answer("❌ Mahsulot savatda topilmadi.", show_alert=True)
+        contracts = await svc.get_contracts(*creds, client_id)
+        await callback.answer()
+        if not contracts:
+            await callback.message.answer("📄 Сизда насия шартномалари йўқ.")
             return
-
-        await callback.answer(f"🗑 {removed.product_name} olib tashlandi")
-        text = await _format_cart_text(callback.from_user.id)
-        kb = await _build_cart_keyboard(callback.from_user.id)
+        text, kb = _contracts_overview(contracts)
         try:
             await callback.message.edit_text(text, reply_markup=kb)
         except Exception:
             await callback.message.answer(text, reply_markup=kb)
-        await callback.message.answer(
-            "🛒 Savat yangilandi.",
-            reply_markup=await _main_menu_keyboard(callback.from_user.id),
-        )
 
-    @router.callback_query(F.data == "cclear")
-    async def cart_clear_callback(callback: CallbackQuery):
-        removed_count = await _cart_clear(callback.from_user.id)
-        if removed_count == 0:
-            await callback.answer("Savat allaqachon bo'sh", show_alert=True)
+    @router.callback_query(F.data.startswith("ct_"))
+    async def contract_callback(callback: CallbackQuery):
+        client_id = await _client_from_callback(callback)
+        if not client_id:
             return
-        await callback.answer("🧹 Savat tozalandi")
+        contract_id = int(callback.data.split("_", 1)[1])
+        c = await svc.get_contract(*creds, client_id, contract_id)
+        if not c:
+            await callback.answer("❌ Шартнома топилмади.", show_alert=True)
+            return
+        await callback.answer()
         try:
-            await callback.message.edit_text(
-                "🛒 <b>Savat bo'sh</b>\n\nMahsulotlar bo'limidan tovar qo'shing.",
-            )
+            await callback.message.edit_text(_contract_text(c), reply_markup=_contract_kb(c))
         except Exception:
-            await callback.message.answer(
-                "🛒 <b>Savat bo'sh</b>\n\nMahsulotlar bo'limidan tovar qo'shing.",
+            await callback.message.answer(_contract_text(c), reply_markup=_contract_kb(c))
+
+    # ════════════════════════════════════════════════════════════════════
+    # 4. 📅 ГРАФИГИМ — payment schedule
+    # ════════════════════════════════════════════════════════════════════
+    SCHED_FILTERS = [("all", "Барчаси"), ("paid", "Тўланган"), ("pending", "Кутилаётган"), ("overdue", "Муддати ўтган")]
+
+    def _schedule_kb(current: str, contract_id: Optional[int] = None) -> InlineKeyboardMarkup:
+        suffix = f"_{contract_id}" if contract_id else ""
+        row = []
+        for key, label in SCHED_FILTERS:
+            mark = "• " if key == current else ""
+            row.append(InlineKeyboardButton(text=f"{mark}{label}", callback_data=f"sched_{key}{suffix}"))
+        rows = [row[:2], row[2:]]
+        rows.append([InlineKeyboardButton(text="💰 Тўлов қилиш", callback_data="pay_start")])
+        if contract_id:
+            rows.append([
+                InlineKeyboardButton(text="⬅️ Шартнома", callback_data=f"ct_{contract_id}"),
+                InlineKeyboardButton(text="📋 Бошқа шартнома", callback_data="sched_pick"),
+            ])
+        else:
+            rows.append([InlineKeyboardButton(text="📋 Шартнома танлаш", callback_data="sched_pick")])
+        return InlineKeyboardMarkup(inline_keyboard=rows)
+
+    async def _schedule_text(client_id: str, status: str, contract_id: Optional[int] = None) -> str:
+        rows = await svc.get_schedule(*creds, client_id, status=status, contract_id=contract_id)
+        nxt = await svc.get_next_payment(*creds, client_id)
+        title = dict(SCHED_FILTERS)[status]
+        today = datetime.now(timezone.utc).date()
+        lines = ["<b>📅 Тўлов графиги</b>" + (f" — {title}" if status != "all" else "")]
+        if contract_id and rows:
+            lines[0] += f"\nШартнома: {rows[0]['contract_number']}"
+        if nxt and not contract_id:
+            days = (nxt["date"] - today).days
+            icon = "🔴" if nxt["status"] == "overdue" else "⏭"
+            lines.append(
+                f"\n{icon} <b>Келгуси тўлов:</b> {fmt_money(nxt['amount'])} — "
+                f"{fmt_date(nxt['date'])} ({_human_days(days)})\n"
+                f"   Шартнома: {nxt['contract_number']}"
             )
-        await callback.message.answer(
-            "🧹 Savat tozalandi.",
-            reply_markup=await _main_menu_keyboard(callback.from_user.id),
-        )
+        elif not nxt and not contract_id:
+            lines.append("\n✅ Барча тўловлар амалга оширилган.")
+        lines.append("")
+        if not rows:
+            lines.append("Бу бўлимда тўловлар йўқ.")
+        else:
+            total = 0.0
+            for r in rows[:40]:
+                icon = STATUS_ICON[r["status"]]
+                extra = ""
+                if r["status"] == "paid" and r.get("paid_date"):
+                    extra = f" (тўланди {fmt_date(r['paid_date'])})"
+                elif r["status"] == "overdue":
+                    extra = f" ({_human_days((r['date'] - today).days)})"
+                ct = "" if contract_id else f" • {r['contract_number']}"
+                lines.append(f"{icon} {fmt_date(r['date'])} — {fmt_money(r['amount'])}{ct}{extra}")
+                total += r["amount"]
+            if len(rows) > 40:
+                lines.append(f"… ва яна {len(rows) - 40} та")
+            lines.append(f"\n<b>Жами:</b> {fmt_money(total)} ({len(rows)} та тўлов)")
+        return "\n".join(lines)
 
-    @router.callback_query(F.data == "csubmit")
-    async def cart_submit_callback(callback: CallbackQuery):
-        user = await _get_user(session_factory, callback.from_user.id, bot_config["id"])
-        if not user or not user.client_id:
-            await callback.answer("❌ Avval ro'yxatdan o'ting. /start", show_alert=True)
+    @router.message(F.text == BTN_SCHEDULE)
+    async def schedule_handler(message: Message):
+        client_id = await _require_client(message)
+        if not client_id:
             return
+        await _schedule_entry(message, client_id)
 
-        items = await _cart_items(callback.from_user.id)
-        if not items:
-            await callback.answer("Savat bo'sh", show_alert=True)
-            return
-
-        await callback.answer("⏳ Buyurtma yuborilmoqda...")
-
-        snapshot = [
-            {
-                "product_id": it.product_id,
-                "name": it.product_name,
-                "price": float(it.price),
-                "qty": float(it.qty),
-            }
-            for it in items
-        ]
-
-        result = await api_service.create_bulk_order(
-            bot_config["base_url"],
-            bot_config["one_c_login"],
-            bot_config["one_c_password"],
-            client_id=int(user.client_id),
-            products=snapshot,
-        )
-
-        if result and not result.get("error"):
-            order_id = result.get("id", "?")
-            total = sum(it["price"] * it["qty"] for it in snapshot)
-            items_summary_lines = []
-            for it in snapshot:
-                items_summary_lines.append(
-                    f"  ▪️ {it['name']} — {it['qty']:g} ta × "
-                    f"{it['price']:,.0f} = {it['price']*it['qty']:,.0f} UZS".replace(",", " ")
-                )
-            await _cart_clear(callback.from_user.id)
-            success_text = (
-                f"✅ <b>Buyurtma qabul qilindi!</b>\n"
-                f"▪️ Buyurtma ID: {order_id}\n"
-                f"▪️ Mahsulotlar: {len(snapshot)} xil\n"
-                + "\n".join(items_summary_lines) + "\n\n"
-                f"<b>Jami: {total:,.0f} UZS</b>".replace(",", " ")
-            )
+    async def _schedule_entry(target: Message, client_id: str, edit: bool = False):
+        """📅 Графигим: 1 contract → its schedule directly; several → pick first."""
+        contracts = await svc.get_contracts(*creds, client_id)
+        if not contracts:
+            text, kb = "📄 Сизда насия шартномалари йўқ.", None
+        elif len(contracts) == 1:
+            cid = contracts[0]["contract_id"]
+            text, kb = await _schedule_text(client_id, "all", cid), _schedule_kb("all", cid)
+        else:
+            text, kb = _schedule_pick_view(contracts)
+        if edit:
             try:
-                await callback.message.edit_text(success_text)
-            except Exception:
-                await callback.message.answer(success_text)
-            await callback.message.answer(
-                "✅ Buyurtma yuborildi.",
-                reply_markup=await _main_menu_keyboard(callback.from_user.id),
-            )
-        else:
-            error = (result or {}).get("error") or (result or {}).get("message", "Noma'lum xatolik")
-            await callback.message.answer(
-                f"❌ Buyurtma yuborilmadi: {error}",
-                reply_markup=await _main_menu_keyboard(callback.from_user.id),
-            )
-
-    @router.message(F.text == "📋 Buyurtmalar")
-    async def orders_handler(message: Message):
-        user = await _get_user(session_factory, message.from_user.id, bot_config["id"])
-        if not user or not user.client_id:
-            await message.answer(
-                "❌ Avval ro'yxatdan o'tishingiz kerak. Iltimos, /start buyrug'ini bosing."
-            )
-            return
-
-        data = await api_service.get_orders(
-            bot_config["base_url"],
-            bot_config["one_c_login"],
-            bot_config["one_c_password"],
-            user.client_id,
-        )
-
-        if not data or not data.get("data"):
-            await message.answer("📋 Sizda hozircha buyurtmalar mavjud emas.")
-            return
-
-        orders = data["data"]
-        for order in orders:
-            order_id = order.get("id", "?")
-            name = order.get("name", "")
-            total_qty = order.get("qty", 0)
-            total_sum = order.get("summa", 0)
-            goods = order.get("list_goods", [])
-
-            lines = [
-                f"<b>📋 Buyurtma #{order_id}</b>",
-                f"👤 {name}",
-                f"📦 Jami: {total_qty} ta | 💰 {total_sum:,} UZS".replace(",", " "),
-                "",
-                "<b>Mahsulotlar:</b>",
-            ]
-
-            for item in goods:
-                item_name = item.get("name", "-")
-                item_qty = item.get("qty", 0)
-                item_sum = item.get("summa", 0)
-                lines.append(f"  ▪️ {item_name} — {item_qty} ta ({item_sum:,} UZS)".replace(",", " "))
-
-            keyboard = InlineKeyboardMarkup(inline_keyboard=[[
-                InlineKeyboardButton(
-                    text="✏️ Tahrirlash",
-                    callback_data=f"edit_{order_id}",
-                ),
-                InlineKeyboardButton(
-                    text="🗑 O'chirish",
-                    callback_data=f"del_{order_id}",
-                ),
-            ]])
-
-            await message.answer("\n".join(lines), reply_markup=keyboard)
-
-    async def _fetch_order(client_id: str, order_id: int) -> Optional[dict]:
-        data = await api_service.get_orders(
-            bot_config["base_url"],
-            bot_config["one_c_login"],
-            bot_config["one_c_password"],
-            client_id,
-        )
-        if not data:
-            return None
-        for o in data.get("data", []):
-            try:
-                if int(o.get("id")) == int(order_id):
-                    return o
-            except (TypeError, ValueError):
-                continue
-        return None
-
-    def _item_unit_price(item: dict) -> float:
-        qty = item.get("qty", 0) or 0
-        summa = item.get("summa", 0) or 0
-        try:
-            qty_f = float(qty)
-        except (TypeError, ValueError):
-            qty_f = 0.0
-        try:
-            summa_f = float(summa)
-        except (TypeError, ValueError):
-            summa_f = 0.0
-        if qty_f <= 0:
-            return 0.0
-        return summa_f / qty_f
-
-    async def _ask_edit_qty(
-        message_or_callback,
-        state: FSMContext,
-        order_id: int,
-        item: dict,
-    ):
-        pid = int(item.get("id"))
-        name = item.get("name", "Mahsulot")
-        cur_qty = item.get("qty", 0)
-        unit_price = _item_unit_price(item)
-
-        await state.update_data(
-            edit_order_id=order_id,
-            edit_product_id=pid,
-            edit_price=unit_price,
-            edit_product_name=name,
-            edit_current_qty=cur_qty,
-        )
-        await state.set_state(EditOrderState.waiting_edit_qty)
-
-        keyboard = ReplyKeyboardMarkup(
-            keyboard=[[KeyboardButton(text="❌ Bekor qilish")]],
-            resize_keyboard=True,
-            one_time_keyboard=True,
-        )
-        text = (
-            f"✏️ <b>Yangi miqdor kiriting</b>\n\n"
-            f"Buyurtma: #{order_id}\n"
-            f"Mahsulot: <b>{name}</b>\n"
-            f"Joriy miqdor: {cur_qty} ta\n\n"
-            "Yangi miqdorni raqamda yuboring."
-        )
-        if isinstance(message_or_callback, CallbackQuery):
-            await message_or_callback.message.answer(text, reply_markup=keyboard)
-        else:
-            await message_or_callback.answer(text, reply_markup=keyboard)
-
-    @router.callback_query(F.data.startswith("edit_"))
-    async def edit_order_callback(callback: CallbackQuery, state: FSMContext):
-        try:
-            parts = callback.data.split("_")
-            order_id = int(parts[1])
-        except (ValueError, IndexError):
-            await callback.answer("❌ Xatolik yuz berdi.", show_alert=True)
-            return
-
-        user = await _get_user(session_factory, callback.from_user.id, bot_config["id"])
-        if not user or not user.client_id:
-            await callback.answer("❌ Avval ro'yxatdan o'ting. /start", show_alert=True)
-            return
-
-        order = await _fetch_order(user.client_id, order_id)
-        if not order:
-            await callback.answer("❌ Buyurtma topilmadi.", show_alert=True)
-            return
-
-        goods = order.get("list_goods", []) or []
-        if not goods:
-            await callback.answer("❌ Buyurtmada mahsulotlar yo'q.", show_alert=True)
-            return
-
-        await callback.answer()
-
-        if len(goods) == 1:
-            await _ask_edit_qty(callback, state, order_id, goods[0])
-            return
-
-        buttons = []
-        for item in goods:
-            pid = item.get("id")
-            name = item.get("name", "-")
-            qty = item.get("qty", 0)
-            short = name if len(name) <= 25 else name[:24] + "…"
-            buttons.append([InlineKeyboardButton(
-                text=f"✏️ {short} ({qty} ta)",
-                callback_data=f"epick_{order_id}_{pid}",
-            )])
-
-        await callback.message.answer(
-            f"✏️ <b>Buyurtma #{order_id} — tahrirlash</b>\n\n"
-            "Qaysi mahsulotni tahrirlamoqchisiz?",
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons),
-        )
-
-    @router.callback_query(F.data.startswith("epick_"))
-    async def edit_pick_product_callback(callback: CallbackQuery, state: FSMContext):
-        try:
-            _, order_id, product_id = callback.data.split("_", 2)
-            order_id = int(order_id)
-            product_id = int(product_id)
-        except (ValueError, IndexError):
-            await callback.answer("❌ Xatolik yuz berdi.", show_alert=True)
-            return
-
-        user = await _get_user(session_factory, callback.from_user.id, bot_config["id"])
-        if not user or not user.client_id:
-            await callback.answer("❌ Avval ro'yxatdan o'ting. /start", show_alert=True)
-            return
-
-        order = await _fetch_order(user.client_id, order_id)
-        if not order:
-            await callback.answer("❌ Buyurtma topilmadi.", show_alert=True)
-            return
-
-        target = None
-        for item in order.get("list_goods", []) or []:
-            try:
-                if int(item.get("id")) == product_id:
-                    target = item
-                    break
-            except (TypeError, ValueError):
-                continue
-
-        if not target:
-            await callback.answer("❌ Mahsulot topilmadi.", show_alert=True)
-            return
-
-        await callback.answer()
-        await _ask_edit_qty(callback, state, order_id, target)
-
-    @router.message(EditOrderState.waiting_edit_qty, F.text == "❌ Bekor qilish")
-    async def cancel_edit_qty(message: Message, state: FSMContext):
-        await state.clear()
-        await message.answer("❌ Tahrirlash bekor qilindi.", reply_markup=await _main_menu_keyboard(message.from_user.id))
-
-    @router.message(EditOrderState.waiting_edit_qty)
-    async def process_edit_qty(message: Message, state: FSMContext):
-        try:
-            qty = float(message.text.strip().replace(",", "."))
-            if qty <= 0:
-                raise ValueError
-        except ValueError:
-            await message.answer("❌ Iltimos, musbat raqam yuboring. Masalan: 3")
-            return
-
-        data = await state.get_data()
-        order_id = data["edit_order_id"]
-        edit_product_id = data["edit_product_id"]
-        edit_price = data["edit_price"]
-        edit_name = data.get("edit_product_name", "Mahsulot")
-        await state.clear()
-
-        user = await _get_user(session_factory, message.from_user.id, bot_config["id"])
-        if not user or not user.client_id:
-            await message.answer(
-                "❌ Avval ro'yxatdan o'ting. /start",
-                reply_markup=await _main_menu_keyboard(message.from_user.id),
-            )
-            return
-
-        order = await _fetch_order(user.client_id, order_id)
-        if not order:
-            await message.answer(
-                "❌ Buyurtma topilmadi. Qaytadan urinib ko'ring.",
-                reply_markup=await _main_menu_keyboard(message.from_user.id),
-            )
-            return
-
-        products = []
-        replaced = False
-        for item in order.get("list_goods", []) or []:
-            try:
-                pid = int(item.get("id"))
-            except (TypeError, ValueError):
-                continue
-            if pid == edit_product_id:
-                use_qty = qty
-                use_price = edit_price if edit_price > 0 else _item_unit_price(item)
-                replaced = True
-            else:
-                try:
-                    use_qty = float(item.get("qty", 0))
-                except (TypeError, ValueError):
-                    use_qty = 0.0
-                use_price = _item_unit_price(item)
-            products.append({
-                "product_id": pid,
-                "price": use_price,
-                "qty": use_qty,
-                "sum": use_price * use_qty,
-            })
-
-        if not replaced:
-            products.append({
-                "product_id": edit_product_id,
-                "price": edit_price,
-                "qty": qty,
-                "sum": edit_price * qty,
-            })
-
-        result = await api_service.edit_order(
-            bot_config["base_url"],
-            bot_config["one_c_login"],
-            bot_config["one_c_password"],
-            order_id=order_id,
-            products=products,
-        )
-
-        if result and not result.get("error"):
-            total = sum(p["sum"] for p in products)
-            await message.answer(
-                f"✅ <b>Buyurtma yangilandi!</b>\n"
-                f"▪️ Buyurtma ID: {order_id}\n"
-                f"▪️ O'zgartirilgan: {edit_name} — {qty:g} ta\n"
-                f"▪️ Mahsulotlar: {len(products)} xil\n"
-                f"▪️ Jami: {total:,.0f} UZS".replace(",", " "),
-                reply_markup=await _main_menu_keyboard(message.from_user.id),
-            )
-        else:
-            error = (result or {}).get("error") or (result or {}).get("message", "Noma'lum xatolik")
-            await message.answer(
-                f"❌ Yangilash amalga oshmadi: {error}",
-                reply_markup=await _main_menu_keyboard(message.from_user.id),
-            )
-
-    @router.callback_query(F.data.startswith("del_"))
-    async def delete_order_callback(callback: CallbackQuery):
-        try:
-            order_id = int(callback.data.split("_", 1)[1])
-        except (ValueError, IndexError):
-            await callback.answer("❌ Xatolik yuz berdi.", show_alert=True)
-            return
-
-        await callback.answer("⏳ O'chirilmoqda...")
-
-        result = await api_service.delete_order(
-            bot_config["base_url"],
-            bot_config["one_c_login"],
-            bot_config["one_c_password"],
-            order_id,
-        )
-
-        if result and not result.get("error"):
-            await callback.message.edit_text(
-                callback.message.html_text + "\n\n<b>✅ O'chirildi</b>"
-            )
-        else:
-            error = (result or {}).get("error") or (result or {}).get("message", "Noma'lum xatolik")
-            await callback.answer(f"❌ {error}", show_alert=True)
-
-    @router.message(F.text == "ℹ️ Info")
-    async def info_handler(message: Message):
-        user = await _get_user(session_factory, message.from_user.id, bot_config["id"])
-        if not user or not user.client_id:
-            await message.answer(
-                "❌ Avval ro'yxatdan o'tishingiz kerak. Iltimos, /start buyrug'ini bosing."
-            )
-            return
-
-        company = bot_config["company_name"]
-
-        lines = [
-            f"<b>ℹ️ {company} — Bot haqida</b>",
-            "",
-            f"Ushbu bot {company} kompaniyasining mijozlar uchun mo'ljallangan rasmiy boti bo'lib, uning yordamida siz mahsulotlarni ko'rishingiz, buyurtma berishingiz hamda barcha hisob-kitoblaringizni nazorat qilishingiz mumkin.",
-            "",
-            "<b>📋 Quyidagi tugmalar mavjud:</b>",
-            "",
-            "━━━ <b>👤 Profil</b> ━━━",
-            "Shaxsiy ma'lumotlaringizni ko'rish: ism, guruh, filial, kategorya, telefon raqam, agent, status va boshqa ma'lumotlar.",
-            "",
-            "━━━ <b>📦 Mahsulotlar</b> ━━━",
-            "Barcha mahsulotlar guruhlarga ajratilgan holda ko'rsatiladi. Guruhni tanlab, ichidagi mahsulotlarni narxlari bilan ko'rishingiz va buyurtma berishingiz mumkin. Mahsulot qoldiqlari ham ko'rsatiladi.",
-            "",
-            "━━━ <b>📋 Buyurtmalar</b> ━━━",
-            "Buyurtmalaringiz ro'yxati va ularning holati. Buyurtma ID, mahsulot nomi, miqdori, summasi ko'rsatiladi. Xar bir buyurtmani tahrirlash yoki o'chirish imkoniyati mavjud.",
-            "",
-            "━━━ <b>💰 Balans</b> ━━━",
-            "Joriy moliyaviy holatingizni tekshirish. Manfiy balans (masalan, -50 000 UZS) — siz haqdorsiz (kompaniya sizdan qarzdor), musbat balans — qarzdorlik mavjud.",
-            "",
-            "━━━ <b>📊 Akt sverka</b> ━━━",
-            "Hisob-kitoblar bo'yicha batafsil ko'chirma. 1, 2 yoki 3 oylik muddatni tanlab, barcha buyurtma va to'lovlar ro'yxatini, balans o'zgarishlarini va umumiy qarzdorlikni ko'rishingiz mumkin.",
-            "",
-            "━━━ <b>✍️ Shikoyat</b> ━━━",
-            "Fikr, shikoyat yoki takliflaringizni qoldiring. Matn va qo'shimcha izoh kiritishingiz mumkin. Xabaringiz tez orada ko'rib chiqiladi.",
-            "",
-            "<b>🌐 Web-sahifa</b>",
-            f"Barcha funksiyalar bilan qulay interfeys orqali tanishish uchun {company} botidagi <code>/start</code> tugmasini bosing va <b>\"Web-sahifani ochish\"</b> havolasidan foydalaning. Telefon va kompyuterda ishlaydi.",
-        ]
-
-        profile = await api_service.get_client_info(
-            bot_config["base_url"],
-            bot_config["one_c_login"],
-            bot_config["one_c_password"],
-            user.client_id,
-        )
-
-        if profile:
-            info_lines = []
-            branch = profile.get("filial_name") or profile.get("branch", "")
-            group_name = profile.get("group_name") or profile.get("group", "")
-            agent_data = profile.get("agent", {})
-            agent_name = agent_data.get("agent_name", "") if isinstance(agent_data, dict) else ""
-            status_name = profile.get("status_name") or profile.get("status", "")
-
-            if branch:
-                info_lines.append(f"▪️ <b>Filial:</b> {branch}")
-            if group_name:
-                info_lines.append(f"▪️ <b>Guruh:</b> {group_name}")
-            if agent_name:
-                info_lines.append(f"▪️ <b>Agent:</b> {agent_name}")
-            if status_name:
-                info_lines.append(f"▪️ <b>Status:</b> {status_name}")
-            if info_lines:
-                lines.append("")
-                lines.append("<b>👤 Sizning ma'lumotlaringiz:</b>")
-                lines.extend(info_lines)
-
-        await message.answer("\n".join(lines))
-
-    @router.message(F.text == "💰 Balans")
-    async def balance_handler(message: Message):
-        user = await _get_user(session_factory, message.from_user.id, bot_config["id"])
-        if not user or not user.client_id:
-            await message.answer(
-                "❌ Avval ro'yxatdan o'tishingiz kerak. Iltimos, /start buyrug'ini bosing."
-            )
-            return
-
-        data = await api_service.get_balance(
-            bot_config["base_url"],
-            bot_config["one_c_login"],
-            bot_config["one_c_password"],
-            user.client_id,
-        )
-
-        if not data or data.get("error"):
-            await message.answer("❌ Balansni olishda xatolik yuz berdi.")
-            return
-
-        balance = (data.get("balance") or "").strip() or "0 UZS"
-
-        import re
-        match = re.search(r"-?[\d\s.,]+", balance)
-        try:
-            val = float(match.group(0).replace(" ", "").replace(",", ".")) if match else 0.0
-        except ValueError:
-            val = 0.0
-
-        if val == 0:
-            emoji = "⚪️"
-        elif val < 0:
-            emoji = "🟢"
-        else:
-            emoji = "🔴"
-
-        await message.answer(
-            f"<b>💰 Balans</b>\n\n"
-            f"{emoji} Joriy balans: <b>{balance}</b>"
-        )
-
-    async def _submit_complaint(message: Message, note: str, comment: str):
-        user = await _get_user(session_factory, message.from_user.id, bot_config["id"])
-        if not user or not user.client_id:
-            await message.answer("❌ Xatolik yuz berdi. Qaytadan urinib ko'ring.")
-            return
-        result = await api_service.create_note(
-            bot_config["base_url"],
-            bot_config["one_c_login"],
-            bot_config["one_c_password"],
-            client_id=int(user.client_id),
-            note=note,
-            comment=comment,
-        )
-        if result and not result.get("error"):
-            await message.answer(
-                "✅ Xabaringiz yuborildi. Rahmat!",
-                reply_markup=await _main_menu_keyboard(message.from_user.id),
-            )
-        else:
-            error = (result or {}).get("message") or (result or {}).get("error", "Noma'lum xatolik")
-            await message.answer(
-                f"❌ Xatolik: {error}",
-                reply_markup=await _main_menu_keyboard(message.from_user.id),
-            )
-
-    @router.message(F.text == "✍️ Shikoyat")
-    async def complaint_start(message: Message, state: FSMContext):
-        user = await _get_user(session_factory, message.from_user.id, bot_config["id"])
-        if not user or not user.client_id:
-            await message.answer(
-                "❌ Avval ro'yxatdan o'tishingiz kerak. Iltimos, /start buyrug'ini bosing."
-            )
-            return
-        await state.set_state(ComplaintState.waiting_note)
-        await message.answer(
-            "✍️ <b>Shikoyat / Taklif</b>\n\n"
-            "Fikr, shikoyat yoki taklifingizni yozing:",
-            reply_markup=ReplyKeyboardMarkup(
-                keyboard=[[KeyboardButton(text="❌ Bekor qilish")]],
-                resize_keyboard=True,
-                one_time_keyboard=True,
-            ),
-        )
-
-    @router.message(ComplaintState.waiting_note, F.text == "❌ Bekor qilish")
-    async def cancel_complaint_note(message: Message, state: FSMContext):
-        await state.clear()
-        await message.answer("Bekor qilindi.", reply_markup=await _main_menu_keyboard(message.from_user.id))
-
-    @router.message(ComplaintState.waiting_note)
-    async def complaint_note_received(message: Message, state: FSMContext):
-        note = message.text.strip()
-        if not note:
-            await message.answer("❌ Matn kiritilishi shart. Qaytadan yozing:")
-            return
-        await state.update_data(note=note)
-        await state.set_state(ComplaintState.waiting_comment)
-        await message.answer(
-            "Qo'shimcha izohingiz bormi? (yo'q bo'lsa \"O'tkazib yuborish\" tugmasini bosing)",
-            reply_markup=ReplyKeyboardMarkup(
-                keyboard=[[KeyboardButton(text="O'tkazib yuborish")]],
-                resize_keyboard=True,
-                one_time_keyboard=True,
-            ),
-        )
-
-    @router.message(ComplaintState.waiting_comment, F.text == "O'tkazib yuborish")
-    async def complaint_skip_comment(message: Message, state: FSMContext):
-        data = await state.get_data()
-        await _submit_complaint(message, data["note"], "")
-        await state.clear()
-
-    @router.message(ComplaintState.waiting_comment)
-    async def complaint_comment_received(message: Message, state: FSMContext):
-        data = await state.get_data()
-        comment = message.text.strip()
-        await _submit_complaint(message, data["note"], comment)
-        await state.clear()
-
-    @router.message(F.text == "📊 Akt sverka")
-    async def akt_sverka_handler(message: Message):
-        user = await _get_user(session_factory, message.from_user.id, bot_config["id"])
-        if not user or not user.client_id:
-            await message.answer(
-                "❌ Avval ro'yxatdan o'tishingiz kerak. Iltimos, /start buyrug'ini bosing."
-            )
-            return
-
-        keyboard = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="1 oylik", callback_data="akt_1")],
-            [InlineKeyboardButton(text="2 oylik", callback_data="akt_2")],
-            [InlineKeyboardButton(text="3 oylik", callback_data="akt_3")],
-        ])
-        await message.answer(
-            "<b>📊 Akt sverka</b>\nDavrni tanlang:",
-            reply_markup=keyboard,
-        )
-
-    @router.callback_query(F.data.startswith("akt_"))
-    async def akt_sverka_callback(callback: CallbackQuery):
-        user = await _get_user(session_factory, callback.from_user.id, bot_config["id"])
-        if not user or not user.client_id:
-            await callback.answer("❌ Avval ro'yxatdan o'ting.", show_alert=True)
-            return
-
-        months = int(callback.data.split("_")[1])
-        await callback.answer()
-
-        from datetime import datetime, timedelta
-        end = datetime.now()
-        start = end - timedelta(days=months * 30)
-        date_begin = start.strftime("%Y%m%d")
-        date_end = end.strftime("%Y%m%d")
-
-        # Clear old report messages
-        old_ids = _akt_msg_ids.pop(callback.message.chat.id, [])
-        for msg_id in old_ids:
-            try:
-                await callback.bot.delete_message(callback.message.chat.id, msg_id)
+                await target.edit_text(text, reply_markup=kb)
+                return
             except Exception:
                 pass
+        await target.answer(text, reply_markup=kb)
 
-        # Update selector message
-        await callback.message.edit_text(
-            f"<b>📊 Akt sverka</b> — {months} oylik\nBoshqa davrni tanlang:",
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="1 oylik", callback_data="akt_1")],
-                [InlineKeyboardButton(text="2 oylik", callback_data="akt_2")],
-                [InlineKeyboardButton(text="3 oylik", callback_data="akt_3")],
-            ]),
-        )
+    def _schedule_pick_view(contracts: list[dict]) -> tuple[str, InlineKeyboardMarkup]:
+        lines = ["<b>📅 Тўлов графиги</b>\n", "Қайси шартнома бўйича графикни кўрасиз?"]
+        buttons = []
+        for c in contracts:
+            icon = CONTRACT_STATUS[c["status"]].split()[0]
+            nxt = f" • {fmt_date(c['next_payment_date'])}" if c["next_payment_date"] else ""
+            buttons.append([InlineKeyboardButton(
+                text=f"{icon} {c['number']} — {fmt_money(c['remaining_debt'])}{nxt}",
+                callback_data=f"sched_ct_{c['contract_id']}",
+            )])
+        buttons.append([InlineKeyboardButton(text="📊 Барча шартномалар графиги", callback_data="sched_all")])
+        return "\n".join(lines), InlineKeyboardMarkup(inline_keyboard=buttons)
 
-        data = await api_service.get_akt_sverka(
-            bot_config["base_url"],
-            bot_config["one_c_login"],
-            bot_config["one_c_password"],
-            user.client_id,
-            date_begin=date_begin,
-            date_end=date_end,
-        )
+    @router.callback_query(F.data == "sched_pick")
+    async def schedule_pick_callback(callback: CallbackQuery):
+        client_id = await _client_from_callback(callback)
+        if not client_id:
+            return
+        await callback.answer()
+        await _schedule_entry(callback.message, client_id, edit=True)
 
-        new_ids = []
+    @router.callback_query(F.data == "sched_next")
+    async def schedule_next_callback(callback: CallbackQuery):
+        client_id = await _client_from_callback(callback)
+        if not client_id:
+            return
+        await callback.answer()
+        await callback.message.answer(await _schedule_text(client_id, "pending"), reply_markup=_schedule_kb("pending"))
 
-        if not data or not data.get("data"):
-            sent = await callback.message.answer(
-                f"📊 <b>{months} oylik</b> — operatsiyalar mavjud emas."
-            )
-            new_ids.append(sent.message_id)
+    @router.callback_query(F.data.startswith("sched_"))
+    async def schedule_filter_callback(callback: CallbackQuery):
+        client_id = await _client_from_callback(callback)
+        if not client_id:
+            return
+        parts = callback.data.split("_")  # sched_<status>[_<contract_id>] | sched_ct_<id>
+        contract_id: Optional[int] = None
+        if parts[1] == "ct":
+            status = "all"
+            contract_id = int(parts[2])
         else:
-            for doc in data["data"]:
-                doc_id = doc.get("id_doc", "?")
-                doc_date = doc.get("date_doc", "")
-                doc_type = doc.get("type_doc", "")
-                doc_debt = doc.get("debt", 0)
-                doc_credit = doc.get("credit", 0)
-                doc_balance = doc.get("balance", 0)
-                details = doc.get("detals", [])
+            status = parts[1]
+            if len(parts) > 2:
+                contract_id = int(parts[2])
+        if status not in dict(SCHED_FILTERS):
+            await callback.answer()
+            return
+        await callback.answer()
+        text = await _schedule_text(client_id, status, contract_id)
+        try:
+            await callback.message.edit_text(text, reply_markup=_schedule_kb(status, contract_id))
+        except Exception:
+            pass  # same content → Telegram rejects the edit
 
-                if doc_debt > 0:
-                    direction = "🛒 Buyurtma"
-                elif doc_credit > 0:
-                    direction = "💰 To'lov"
-                else:
-                    direction = doc_type
+    # ════════════════════════════════════════════════════════════════════
+    # 5. 💰 ТЎЛОВ ҚИЛИШ — online payment (mock)  /  🧾 ТЎЛОВЛАР — history
+    # ════════════════════════════════════════════════════════════════════
+    async def _pay_pick_contract(target: Message, client_id: str, edit: bool = False):
+        contracts = [c for c in await svc.get_contracts(*creds, client_id) if c["status"] != "closed"]
+        if not contracts:
+            text = "✅ Сизда очиқ қарз йўқ — барча шартномалар ёпилган."
+            if edit:
+                try:
+                    await target.edit_text(text)
+                    return
+                except Exception:
+                    pass
+            await target.answer(text)
+            return
+        buttons = [[InlineKeyboardButton(
+            text=f"{c['number']} — қарз {fmt_money(c['remaining_debt'])}",
+            callback_data=f"pay_ct_{c['contract_id']}",
+        )] for c in contracts]
+        kb = InlineKeyboardMarkup(inline_keyboard=buttons)
+        text = "<b>💰 Тўлов қилиш</b>\n\nҚайси шартнома бўйича тўлайсиз?"
+        if edit:
+            try:
+                await target.edit_text(text, reply_markup=kb)
+                return
+            except Exception:
+                pass
+        await target.answer(text, reply_markup=kb)
 
-                lines = [
-                    f"<b>📄 {direction}</b>",
-                    f"▪️ Hujjat: #{doc_id} | {doc_date}",
-                ]
-                if doc_debt:
-                    lines.append(f"▪️ Summa: {doc_debt:,} UZS".replace(",", " "))
-                if doc_credit:
-                    lines.append(f"▪️ Summa: {doc_credit:,} UZS".replace(",", " "))
-                lines.append(f"▪️ Balans: {doc_balance:,} UZS".replace(",", " "))
+    @router.message(F.text == BTN_PAY)
+    async def pay_handler(message: Message, state: FSMContext):
+        client_id = await _require_client(message)
+        if not client_id:
+            return
+        await state.clear()
+        await _pay_pick_contract(message, client_id)
 
-                if details:
-                    lines.append("")
-                    for d in details:
-                        d_name = d.get("osnova", "-")
-                        d_qty = d.get("qty", "0")
-                        d_debt = d.get("debt", 0)
-                        d_credit = d.get("credit", 0)
-                        lines.append(
-                            f"  ▫️ {d_name} — {d_qty} ta "
-                            f"(Summa: {d_debt or d_credit:,} UZS)".replace(",", " ")
-                        )
+    @router.callback_query(F.data == "pay_start")
+    async def pay_start_callback(callback: CallbackQuery, state: FSMContext):
+        client_id = await _client_from_callback(callback)
+        if not client_id:
+            return
+        await state.clear()
+        await callback.answer()
+        await _pay_pick_contract(callback.message, client_id)
 
-                sent = await callback.message.answer("\n".join(lines))
-                new_ids.append(sent.message_id)
+    @router.callback_query(F.data.startswith("pay_ct_"))
+    async def pay_contract_callback(callback: CallbackQuery, state: FSMContext):
+        client_id = await _client_from_callback(callback)
+        if not client_id:
+            return
+        contract_id = int(callback.data.rsplit("_", 1)[1])
+        c = await svc.get_contract(*creds, client_id, contract_id)
+        if not c or c["status"] == "closed":
+            await callback.answer("Бу шартнома бўйича қарз йўқ.", show_alert=True)
+            return
+        await callback.answer()
+        await state.update_data(pay_contract_id=contract_id)
+        rows = []
+        if c["overdue_amount"] > 0:
+            rows.append([InlineKeyboardButton(
+                text=f"🔴 Муддати ўтганни тўлаш — {fmt_money(c['overdue_amount'])}",
+                callback_data=f"pay_amt_{contract_id}_{int(c['overdue_amount'])}",
+            )])
+        if c["next_payment_amount"] > 0:
+            rows.append([InlineKeyboardButton(
+                text=f"⏭ Навбатдаги тўлов — {fmt_money(c['next_payment_amount'])}",
+                callback_data=f"pay_amt_{contract_id}_{int(c['next_payment_amount'])}",
+            )])
+        rows.append([InlineKeyboardButton(
+            text=f"💳 Тўлиқ қарзни ёпиш — {fmt_money(c['remaining_debt'])}",
+            callback_data=f"pay_amt_{contract_id}_{int(c['remaining_debt'])}",
+        )])
+        rows.append([InlineKeyboardButton(text="✏️ Бошқа сумма", callback_data=f"pay_custom_{contract_id}")])
+        rows.append([InlineKeyboardButton(text="⬅️ Орқага", callback_data="pay_start")])
+        text = (
+            f"<b>💰 Тўлов — {c['number']}</b>\n\n"
+            f"💳 Қолган қарз: {fmt_money(c['remaining_debt'])}\n"
+            + (f"⏭ Кейинги тўлов: {fmt_money(c['next_payment_amount'])} — {fmt_date(c['next_payment_date'])}\n" if c["next_payment_date"] else "")
+            + "\nТўлов суммасини танланг:"
+        )
+        try:
+            await callback.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
+        except Exception:
+            await callback.message.answer(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
 
-        _akt_msg_ids[callback.message.chat.id] = new_ids
+    @router.callback_query(F.data.startswith("pay_custom_"))
+    async def pay_custom_callback(callback: CallbackQuery, state: FSMContext):
+        client_id = await _client_from_callback(callback)
+        if not client_id:
+            return
+        contract_id = int(callback.data.rsplit("_", 1)[1])
+        await state.update_data(pay_contract_id=contract_id)
+        await state.set_state(PayState.waiting_amount)
+        await callback.answer()
+        await callback.message.answer(
+            "✏️ Тўлов суммасини сўмда киритинг (масалан: <code>500000</code>):",
+            reply_markup=cancel_keyboard(),
+        )
+
+    @router.message(PayState.waiting_amount, F.text == BTN_CANCEL)
+    async def pay_cancel_amount(message: Message, state: FSMContext):
+        await state.clear()
+        await message.answer("❌ Тўлов бекор қилинди.", reply_markup=main_menu_keyboard())
+
+    @router.message(PayState.waiting_amount)
+    async def pay_amount_entered(message: Message, state: FSMContext):
+        raw = (message.text or "").replace(" ", "").replace(",", ".").replace("сўм", "")
+        try:
+            amount = float(raw)
+            if amount <= 0:
+                raise ValueError
+        except ValueError:
+            await message.answer("❌ Нотўғри сумма. Фақат рақам киритинг, масалан: <code>500000</code>")
+            return
+        data = await state.get_data()
+        contract_id = data.get("pay_contract_id")
+        client_id = await _require_client(message)
+        if not client_id or not contract_id:
+            await state.clear()
+            return
+        c = await svc.get_contract(*creds, client_id, contract_id)
+        if not c:
+            await state.clear()
+            await message.answer("❌ Шартнома топилмади.", reply_markup=main_menu_keyboard())
+            return
+        if amount > c["remaining_debt"] + 0.5:
+            amount = c["remaining_debt"]
+            await message.answer(f"ℹ️ Сумма қолган қарздан кўп эди — {fmt_money(amount)} га туширилди.")
+        await message.answer("Тасдиқланг:", reply_markup=main_menu_keyboard())
+        await _pay_confirm(message, state, client_id, contract_id, amount)
+
+    @router.callback_query(F.data.startswith("pay_amt_"))
+    async def pay_amount_callback(callback: CallbackQuery, state: FSMContext):
+        client_id = await _client_from_callback(callback)
+        if not client_id:
+            return
+        _, _, contract_id, amount = callback.data.split("_")
+        await callback.answer()
+        await _pay_confirm(callback.message, state, client_id, int(contract_id), float(amount), edit=True)
+
+    async def _pay_confirm(target: Message, state: FSMContext, client_id: str, contract_id: int, amount: float, edit: bool = False):
+        c = await svc.get_contract(*creds, client_id, contract_id)
+        if not c:
+            await target.answer("❌ Шартнома топилмади.")
+            return
+        await state.set_state(PayState.waiting_confirm)
+        await state.update_data(pay_contract_id=contract_id, pay_amount=amount, pay_method=None)
+        after = max(0.0, c["remaining_debt"] - amount)
+        text = (
+            "<b>💳 Тўлов усулини танланг</b>\n\n"
+            f"📄 Шартнома: {c['number']}\n"
+            f"💰 Сумма: <b>{fmt_money(amount)}</b>\n"
+            f"💳 Тўловдан кейин қолган қарз: {fmt_money(after)}\n\n"
+            "Қайси тизим орқали тўлайсиз?"
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🟦 Payme", callback_data="pay_method_payme"),
+             InlineKeyboardButton(text="🔵 Click", callback_data="pay_method_click"),
+             InlineKeyboardButton(text="🟩 Paynet", callback_data="pay_method_paynet")],
+            [InlineKeyboardButton(text="❌ Бекор қилиш", callback_data="pay_cancel")],
+        ])
+        if edit:
+            try:
+                await target.edit_text(text, reply_markup=kb)
+                return
+            except Exception:
+                pass
+        await target.answer(text, reply_markup=kb)
+
+    @router.callback_query(F.data.startswith("pay_method_"))
+    async def pay_method_callback(callback: CallbackQuery, state: FSMContext):
+        client_id = await _client_from_callback(callback)
+        if not client_id:
+            return
+        method = callback.data.rsplit("_", 1)[1]
+        if method not in PAY_METHODS:
+            await callback.answer()
+            return
+        data = await state.get_data()
+        contract_id, amount = data.get("pay_contract_id"), data.get("pay_amount")
+        if not contract_id or not amount:
+            await callback.answer("Тўлов маълумоти топилмади. Қайтадан бошланг.", show_alert=True)
+            await state.clear()
+            return
+        c = await svc.get_contract(*creds, client_id, int(contract_id))
+        if not c:
+            await callback.answer("❌ Шартнома топилмади.", show_alert=True)
+            return
+        await state.set_state(PayState.waiting_confirm)
+        await state.update_data(pay_method=method)
+        label, url = PAY_METHODS[method]
+        # demo checkout link: real integration will return a provider-generated URL
+        checkout_url = f"{url}?merchant=mxnasiya&contract={c['number']}&amount={int(float(amount)) * 100}"
+        await callback.answer()
+        text = (
+            f"<b>🧾 {label} орқали тўлов</b>\n\n"
+            f"📄 Шартнома: {c['number']}\n"
+            f"💰 Сумма: <b>{fmt_money(float(amount))}</b>\n"
+            f"🏦 Усул: {label}\n\n"
+            f"1️⃣ «🔗 {label} да тўлаш» тугмасини босиб тўловни амалга оширинг.\n"
+            "2️⃣ Сўнг «✅ Тўладим — тасдиқлаш» тугмасини босинг.\n\n"
+            "<i>ℹ️ Демо режим: ҳавола намунавий, тўлов ботда симуляция қилинади.</i>"
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text=f"🔗 {label} да тўлаш", url=checkout_url)],
+            [InlineKeyboardButton(text="✅ Тўладим — тасдиқлаш", callback_data="pay_confirm")],
+            [InlineKeyboardButton(text="🔄 Бошқа усул", callback_data="pay_back_method"),
+             InlineKeyboardButton(text="❌ Бекор қилиш", callback_data="pay_cancel")],
+        ])
+        try:
+            await callback.message.edit_text(text, reply_markup=kb)
+        except Exception:
+            await callback.message.answer(text, reply_markup=kb)
+
+    @router.callback_query(F.data == "pay_back_method")
+    async def pay_back_method_callback(callback: CallbackQuery, state: FSMContext):
+        client_id = await _client_from_callback(callback)
+        if not client_id:
+            return
+        data = await state.get_data()
+        contract_id, amount = data.get("pay_contract_id"), data.get("pay_amount")
+        if not contract_id or not amount:
+            await callback.answer("Қайтадан бошланг.", show_alert=True)
+            await state.clear()
+            return
+        await callback.answer()
+        await _pay_confirm(callback.message, state, client_id, int(contract_id), float(amount), edit=True)
+
+    @router.callback_query(F.data == "pay_cancel")
+    async def pay_cancel_callback(callback: CallbackQuery, state: FSMContext):
+        await state.clear()
+        await callback.answer("Бекор қилинди")
+        try:
+            await callback.message.edit_text("❌ Тўлов бекор қилинди.")
+        except Exception:
+            pass
+
+    @router.callback_query(F.data == "pay_confirm")
+    async def pay_confirm_callback(callback: CallbackQuery, state: FSMContext):
+        client_id = await _client_from_callback(callback)
+        if not client_id:
+            return
+        data = await state.get_data()
+        contract_id = data.get("pay_contract_id")
+        amount = data.get("pay_amount")
+        method = data.get("pay_method")
+        if not contract_id or not amount:
+            await callback.answer("Тўлов маълумоти топилмади. Қайтадан бошланг.", show_alert=True)
+            await state.clear()
+            return
+        if method not in PAY_METHODS:
+            await callback.answer("Аввал тўлов усулини танланг.", show_alert=True)
+            return
+        method_label = PAY_METHODS[method][0]
+        await callback.answer("Тўлов текширилмоқда…")
+        result = await svc.make_payment(*creds, client_id, int(contract_id), float(amount), method=method_label)
+        await state.clear()
+        if not result or not result.get("success"):
+            await callback.message.answer("❌ Тўлов амалга ошмади. Кейинроқ уриниб кўринг ёки оператор билан боғланинг.")
+            return
+        lines = [
+            "<b>✅ Тўлов муваффақиятли амалга оширилди!</b>\n",
+            "<b>🧾 Квитанция</b>",
+            f"№ {result['receipt_no']}",
+            f"📅 Сана: {fmt_date(result['date'])}",
+            f"📄 Шартнома: {result['contract_number']}",
+            f"💰 Сумма: <b>{fmt_money(result['amount'])}</b>",
+            f"🏦 Усул: {method_label}",
+            "",
+            f"💳 <b>Қолган қарз:</b> {fmt_money(result['remaining_debt'])}",
+        ]
+        if result.get("closed"):
+            lines.append("🎉 Шартнома тўлиқ ёпилди! Раҳмат!")
+        elif result.get("next_payment_date"):
+            lines.append(f"⏭ Кейинги тўлов: {fmt_money(result['next_payment_amount'])} — {fmt_date(result['next_payment_date'])}")
+        if svc.is_mock():
+            lines.append("\n<i>ℹ️ Тест режими: тўлов ҳақиқий эмас (mock).</i>")
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="📅 Графигим", callback_data="sched_all"),
+             InlineKeyboardButton(text="🧾 Тўловлар", callback_data="payments_list")],
+        ])
+        try:
+            await callback.message.edit_text("\n".join(lines), reply_markup=kb)
+        except Exception:
+            await callback.message.answer("\n".join(lines), reply_markup=kb)
+
+    async def _payments_text(client_id: str) -> str:
+        payments = await svc.get_payments(*creds, client_id)
+        cab = await svc.get_cabinet(*creds, client_id)
+        lines = [
+            "<b>🧾 Тўловлар</b>\n",
+            f"✅ <b>Жами тўланган:</b> {fmt_money(cab['total_paid'])}",
+            f"💳 <b>Қолган қарз:</b> {fmt_money(cab['remaining_debt'])}",
+            "",
+            "<b>Тўловлар тарихи:</b>",
+        ]
+        if not payments:
+            lines.append("Ҳали тўловлар йўқ.")
+        for p in payments[:25]:
+            lines.append(
+                f"• {fmt_date(p['date'])} — <b>{fmt_money(p['amount'])}</b>\n"
+                f"   {p['contract_number']} • {p['method']} • {p.get('note', '')}\n"
+                f"   Квитанция: <code>{p['receipt_no']}</code>"
+            )
+        if len(payments) > 25:
+            lines.append(f"… ва яна {len(payments) - 25} та")
+        return "\n".join(lines)
+
+    @router.message(F.text == BTN_PAYMENTS)
+    async def payments_handler(message: Message):
+        client_id = await _require_client(message)
+        if not client_id:
+            return
+        kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="💰 Тўлов қилиш", callback_data="pay_start")]])
+        await message.answer(await _payments_text(client_id), reply_markup=kb)
+
+    @router.callback_query(F.data == "payments_list")
+    async def payments_callback(callback: CallbackQuery):
+        client_id = await _client_from_callback(callback)
+        if not client_id:
+            return
+        await callback.answer()
+        kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="💰 Тўлов қилиш", callback_data="pay_start")]])
+        await callback.message.answer(await _payments_text(client_id), reply_markup=kb)
+
+    # ════════════════════════════════════════════════════════════════════
+    # 6. 🛍 ХАРИДЛАР — purchase history
+    # ════════════════════════════════════════════════════════════════════
+    @router.message(F.text == BTN_PURCHASES)
+    async def purchases_handler(message: Message):
+        client_id = await _require_client(message)
+        if not client_id:
+            return
+        rows = await svc.get_purchases(*creds, client_id)
+        if not rows:
+            await message.answer("🛍 Харидлар тарихи бўш.")
+            return
+        lines = ["<b>🛍 Харидлар тарихи</b>\n"]
+        buttons = []
+        for r in rows:
+            lines.append(f"📅 <b>{fmt_date(r['date'])}</b> • Шартнома {r['contract_number']} • {r['branch']}")
+            for p in r["products"]:
+                lines.append(f"   • {p['name']} × {p['qty']} — {fmt_money(p['sum'])}")
+            lines.append(f"   💵 Жами: <b>{fmt_money(r['total'])}</b>\n")
+            buttons.append([InlineKeyboardButton(text=f"📄 {r['contract_number']}", callback_data=f"ct_{r['contract_id']}")])
+        lines.append(f"Жами харидлар: {len(rows)} та • {fmt_money(sum(r['total'] for r in rows))}")
+        await message.answer("\n".join(lines), reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
+
+    # ════════════════════════════════════════════════════════════════════
+    # 8. 📞 ЁРДАМ — support
+    # ════════════════════════════════════════════════════════════════════
+    def _help_kb() -> InlineKeyboardMarkup:
+        return InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="📞 Оператор билан боғланиш", callback_data="help_operator")],
+            [InlineKeyboardButton(text="✍️ Мурожаат қолдириш", callback_data="help_request"),
+             InlineKeyboardButton(text="💡 Савол / таклиф", callback_data="help_question")],
+            [InlineKeyboardButton(text="🏢 Компания контактлари", callback_data="help_contacts"),
+             InlineKeyboardButton(text="📍 Филиаллар", callback_data="help_branches")],
+        ])
+
+    @router.message(F.text == BTN_HELP)
+    async def help_handler(message: Message, state: FSMContext):
+        await state.clear()
+        info = await svc.get_company_info(*creds)
+        await message.answer(
+            f"<b>📞 Ёрдам — {info['name']}</b>\n\n"
+            f"Иш вақти: {info['working_hours']}\n"
+            f"Телефон: {info['phone']}\n\n"
+            "Керакли бўлимни танланг:",
+            reply_markup=_help_kb(),
+        )
+
+    @router.callback_query(F.data == "help_operator")
+    async def help_operator(callback: CallbackQuery):
+        info = await svc.get_company_info(*creds)
+        await callback.answer()
+        await callback.message.answer(
+            "<b>📞 Оператор билан боғланиш</b>\n\n"
+            f"☎️ Телефон: {info['operator_phone']}\n"
+            f"💬 Telegram: {info['operator_username']}\n"
+            f"🕘 Иш вақти: {info['working_hours']}\n\n"
+            "Ёки «✍️ Мурожаат қолдириш» тугмаси орқали ёзиб қолдиринг — оператор сиз билан боғланади.",
+            reply_markup=_help_kb(),
+        )
+
+    @router.callback_query(F.data == "help_contacts")
+    async def help_contacts(callback: CallbackQuery):
+        info = await svc.get_company_info(*creds)
+        await callback.answer()
+        await callback.message.answer(
+            f"<b>🏢 {info['name']} — контактлар</b>\n\n"
+            f"☎️ {info['phone']}\n"
+            f"✉️ {info['email']}\n"
+            f"📍 {info['address']}\n"
+            f"🕘 {info['working_hours']}",
+            reply_markup=_help_kb(),
+        )
+
+    @router.callback_query(F.data == "help_branches")
+    async def help_branches(callback: CallbackQuery):
+        info = await svc.get_company_info(*creds)
+        await callback.answer()
+        lines = ["<b>📍 Филиаллар</b>\n"]
+        for b in info["branches"]:
+            lines.append(f"<b>{b['name']}</b>\n   📍 {b['address']}\n   ☎️ {b['phone']}\n   🕘 {b['hours']}\n")
+        await callback.message.answer("\n".join(lines), reply_markup=_help_kb())
+
+    @router.callback_query(F.data.in_({"help_request", "help_question"}))
+    async def help_write(callback: CallbackQuery, state: FSMContext):
+        client_id = await _client_from_callback(callback)
+        if not client_id:
+            return
+        await callback.answer()
+        if callback.data == "help_request":
+            await state.set_state(SupportState.waiting_request)
+            await callback.message.answer(
+                "✍️ <b>Мурожаат қолдириш</b>\n\nМурожаатингизни битта хабарда ёзиб юборинг:",
+                reply_markup=cancel_keyboard(),
+            )
+        else:
+            await state.set_state(SupportState.waiting_question)
+            await callback.message.answer(
+                "💡 <b>Савол / таклиф</b>\n\nСавол ёки таклифингизни ёзиб юборинг:",
+                reply_markup=cancel_keyboard(),
+            )
+
+    @router.message(SupportState.waiting_request, F.text == BTN_CANCEL)
+    @router.message(SupportState.waiting_question, F.text == BTN_CANCEL)
+    async def help_cancel(message: Message, state: FSMContext):
+        await state.clear()
+        await message.answer("❌ Бекор қилинди.", reply_markup=main_menu_keyboard())
+
+    @router.message(SupportState.waiting_request)
+    @router.message(SupportState.waiting_question)
+    async def help_received(message: Message, state: FSMContext):
+        client_id = await _require_client(message)
+        if not client_id:
+            await state.clear()
+            return
+        cur = await state.get_state()
+        kind = "request" if cur == SupportState.waiting_request.state else "question"
+        text = (message.text or message.caption or "").strip()
+        if not text:
+            await message.answer("Илтимос, матн юборинг.")
+            return
+        res = await svc.create_request(*creds, client_id, kind, text, telegram_id=message.from_user.id)
+        await state.clear()
+        if res and res.get("success"):
+            label = "Мурожаатингиз" if kind == "request" else "Савол/таклифингиз"
+            await message.answer(
+                f"✅ {label} қабул қилинди (№ {res['id']}). Операторларимиз тез орада сиз билан боғланади.",
+                reply_markup=main_menu_keyboard(),
+            )
+        else:
+            await message.answer("❌ Юборишда хатолик. Кейинроқ уриниб кўринг.", reply_markup=main_menu_keyboard())
+
+    # ════════════════════════════════════════════════════════════════════
+    # 9. 🎁 АКЦИЯЛАР ВА ХАБАРЛАР
+    # ════════════════════════════════════════════════════════════════════
+    PROMO_TYPES = [("all", "Барчаси"), ("promo", "Акциялар"), ("new", "Янги товарлар"), ("special", "Махсус таклифлар"), ("news", "Хабарлар")]
+
+    def _promo_kb(current: str) -> InlineKeyboardMarkup:
+        row = [InlineKeyboardButton(text=("• " if k == current else "") + t, callback_data=f"promo_{k}") for k, t in PROMO_TYPES]
+        return InlineKeyboardMarkup(inline_keyboard=[row[:3], row[3:]])
+
+    async def _promo_text(kind: str) -> str:
+        items = await svc.get_promotions(*creds)
+        if kind != "all":
+            items = [i for i in items if i["type"] == kind]
+        lines = ["<b>🎁 Акциялар ва хабарлар</b>\n"]
+        if not items:
+            lines.append("Ҳозирча маълумот йўқ.")
+        for i in items:
+            lines.append(f"<b>{i['title']}</b>\n{i['text']}" + (f"\n<i>Амал қилиш муддати: {i['valid_until']}</i>" if i["valid_until"] else "") + "\n")
+        return "\n".join(lines)
+
+    @router.message(F.text == BTN_PROMO)
+    async def promo_handler(message: Message):
+        await message.answer(await _promo_text("all"), reply_markup=_promo_kb("all"))
+
+    @router.callback_query(F.data.startswith("promo_"))
+    async def promo_callback(callback: CallbackQuery):
+        kind = callback.data.split("_", 1)[1]
+        await callback.answer()
+        try:
+            await callback.message.edit_text(await _promo_text(kind), reply_markup=_promo_kb(kind))
+        except Exception:
+            pass
+
+    # ── generic cancel outside of a state ───────────────────────────────
+    @router.message(F.text == BTN_CANCEL)
+    async def cancel_any(message: Message, state: FSMContext):
+        await state.clear()
+        await message.answer("Асосий меню:", reply_markup=main_menu_keyboard())
 
     return router

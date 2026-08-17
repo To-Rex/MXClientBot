@@ -42,3 +42,11 @@ try:
     PRODUCTS_CACHE_TTL = int(os.getenv("PRODUCTS_CACHE_TTL", "30"))
 except ValueError:
     PRODUCTS_CACHE_TTL = 30
+
+# Nasiya ma'lumotlari: 1 = mock (in-memory), 0 = real 1C (endpointlar tayyor bo'lganda)
+NASIYA_MOCK = os.getenv("NASIYA_MOCK", "1").strip() not in ("0", "false", "False", "no")
+# Eslatmalar (to'lov yaqinlashganda / kechikkanda) tekshiruv oralig'i, soniya. 0 = o'chirilgan.
+try:
+    REMINDER_INTERVAL = int(os.getenv("REMINDER_INTERVAL", "3600"))
+except ValueError:
+    REMINDER_INTERVAL = 3600

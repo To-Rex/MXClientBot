@@ -12,17 +12,19 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, AsyncSession
 from app.config import WEBAPP_URL
 from app.handlers.router import create_router
 from app.models import Bot as BotModel
+from app.services.reminders import reminder_loop
 
 logger = logging.getLogger(__name__)
 
 
 class BotInstance:
-    __slots__ = ("bot", "dp", "task")
+    __slots__ = ("bot", "dp", "task", "reminder_task")
 
-    def __init__(self, bot: Bot, dp: Dispatcher, task: asyncio.Task):
+    def __init__(self, bot: Bot, dp: Dispatcher, task: asyncio.Task, reminder_task: Optional[asyncio.Task] = None):
         self.bot = bot
         self.dp = dp
         self.task = task
+        self.reminder_task = reminder_task
 
 
 class BotManager:
@@ -49,11 +51,16 @@ class BotManager:
         instance = self._instances.pop(bot_id, None)
         if instance is None:
             return
-        instance.task.cancel()
-        try:
-            await instance.task
-        except asyncio.CancelledError:
-            pass
+        for t in (instance.reminder_task, instance.task):
+            if t is None:
+                continue
+            t.cancel()
+            try:
+                await t
+            except asyncio.CancelledError:
+                pass
+            except Exception as e:
+                logger.debug("task finished with error for bot %d: %s", bot_id, e)
         await instance.bot.session.close()
         logger.info("Stopped bot %d", bot_id)
 
@@ -86,9 +93,9 @@ class BotManager:
 
         try:
             await bot.set_my_commands([
-                BotCommand(command="start", description="Botni boshlash"),
-                BotCommand(command="getsession", description="Brauzer uchun havola olish"),
-                BotCommand(command="logout", description="Tizimdan chiqish"),
+                BotCommand(command="start", description="Ботни бошлаш / асосий меню"),
+                BotCommand(command="getsession", description="Браузер учун ҳавола олиш"),
+                BotCommand(command="logout", description="Тизимдан чиқиш"),
             ])
         except Exception as e:
             logger.warning("Failed to set commands for bot %d: %s", bot_record.id, e)
@@ -107,15 +114,49 @@ class BotManager:
                 logger.warning("Failed to set WebApp menu button for bot %d: %s", bot_record.id, e)
 
         task = asyncio.create_task(
-            dp.start_polling(
-                bot,
-                allowed_updates=dp.resolve_used_update_types(),
-                handle_signals=False,
-            )
+            self._supervised_polling(bot, dp, bot_record.id, bot_record.name),
+            name=f"polling-bot-{bot_record.id}",
         )
 
-        self._instances[bot_record.id] = BotInstance(bot=bot, dp=dp, task=task)
+        creds = (bot_config["base_url"], bot_config["one_c_login"], bot_config["one_c_password"])
+        reminder_task = asyncio.create_task(
+            reminder_loop(bot, bot_record.id, creds, self._session_factory),
+            name=f"reminders-bot-{bot_record.id}",
+        )
+
+        self._instances[bot_record.id] = BotInstance(bot=bot, dp=dp, task=task, reminder_task=reminder_task)
         logger.info("Started bot %d (%s)", bot_record.id, bot_record.name)
+
+    @staticmethod
+    async def _supervised_polling(bot: Bot, dp: Dispatcher, bot_id: int, name: str):
+        """Keep polling alive forever.
+
+        aiogram's polling already retries network errors, but if
+        ``start_polling`` itself raises (e.g. ``getMe`` fails while the network is
+        down at startup, or an unexpected internal error), the task would die
+        silently and the bot would stop responding.  This loop restarts it with
+        exponential backoff until the bot is stopped explicitly (cancel).
+        """
+        delay = 2
+        while True:
+            try:
+                await dp.start_polling(
+                    bot,
+                    allowed_updates=dp.resolve_used_update_types(),
+                    handle_signals=False,
+                    close_bot_session=False,
+                )
+                logger.info("Polling finished for bot %d (%s)", bot_id, name)
+                return
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                logger.error(
+                    "Polling crashed for bot %d (%s): %s: %s — restarting in %ss",
+                    bot_id, name, type(e).__name__, e, delay,
+                )
+                await asyncio.sleep(delay)
+                delay = min(delay * 2, 60)
 
     async def stop_all(self):
         for bot_id in list(self._instances.keys()):
