@@ -4,7 +4,9 @@ Telegram bot va WebApp (mijozning nasiya bo'yicha shaxsiy kabineti) uchun 1C:Ent
 
 Hozir bot **mock** ma'lumotlar bilan ishlaydi (`app/services/nasiya_api.py`). Shu hujjatdagi endpointlar tayyor bo'lgach, o'sha servis metodlari real so'rovlarga almashtiriladi — bot va WebApp kodi o'zgarmaydi.
 
-Bugungi kunda tayyor: **`checkNumber`** (1-bo'lim). Qolganlari — yaratilishi kerak.
+Bugungi kunda tayyor va botga ulangan: **`checkNumber`** (1-bo'lim), **`getClientInfo`** (2-bo'lim). Qolganlari — yaratilishi kerak.
+
+> Ulash tartibi: `.env` dagi `NASIYA_REAL_ENDPOINTS` ro'yxatiga endpoint nomi qo'shiladi (masalan `getClientInfo,getContracts`). Ro'yxatdagilar real 1C dan olinadi, qolganlari mock; real API xato bersa bot avtomatik mock'ga qaytadi.
 
 ---
 
@@ -111,7 +113,7 @@ Topilmasa: `404` + `CLIENT_NOT_FOUND` (yoki bo'sh `{}` — bot ikkalasini ham "t
 
 ---
 
-## 2. Shaxsiy kabinet — `GET getClientInfo`
+## 2. Shaxsiy kabinet — `GET getClientInfo` ✅ tayyor, ulangan
 
 Kabinet sahifasi va bosh ekrandagi umumiy ko'rsatkichlar. Bir so'rovda mijoz haqida hamma jamlangan raqam qaytadi.
 

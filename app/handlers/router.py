@@ -346,6 +346,14 @@ def create_router(
         ]
         if cab["overdue_amount"] > 0:
             lines.append(f"🔴 <b>Муддати ўтган:</b> {fmt_money(cab['overdue_amount'])} ({cab['overdue_count']} та тўлов)")
+        nxt = cab.get("next_payment")
+        if nxt and nxt.get("date"):
+            days = (nxt["date"] - datetime.now(timezone.utc).date()).days
+            icon = "🔴" if days < 0 else "⏭"
+            lines.append(
+                f"{icon} <b>Кейинги тўлов:</b> {fmt_money(nxt['amount'])} — {fmt_date(nxt['date'])} ({_human_days(days)})"
+                + (f"\n   Шартнома: {nxt['contract_number']}" if nxt.get("contract_number") else "")
+            )
         lines.append("")
         lines.append(f"🔔 Эслатмалар: {'ёқилган' if cab.get('reminders_enabled') else 'ўчирилган'}")
         return "\n".join(lines)
@@ -375,8 +383,14 @@ def create_router(
         if not client_id:
             return
         cab = await svc.get_cabinet(*creds, client_id)
+        if not cab:
+            await callback.answer("❌ Маълумот олинмади. Кейинроқ уриниб кўринг.", show_alert=True)
+            return
         await svc.set_reminders(client_id, not cab.get("reminders_enabled"))
         cab = await svc.get_cabinet(*creds, client_id)
+        if not cab:
+            await callback.answer("❌ Маълумот олинмади.", show_alert=True)
+            return
         await callback.answer("Эслатмалар ёқилди 🔔" if cab["reminders_enabled"] else "Эслатмалар ўчирилди 🔕")
         try:
             await callback.message.edit_text(_cabinet_text(cab), reply_markup=_cabinet_kb(cab))
@@ -918,10 +932,13 @@ def create_router(
     async def _payments_text(client_id: str) -> str:
         payments = await svc.get_payments(*creds, client_id)
         cab = await svc.get_cabinet(*creds, client_id)
-        lines = [
-            "<b>🧾 Тўловлар</b>\n",
-            f"✅ <b>Жами тўланган:</b> {fmt_money(cab['total_paid'])}",
-            f"💳 <b>Қолган қарз:</b> {fmt_money(cab['remaining_debt'])}",
+        lines = ["<b>🧾 Тўловлар</b>\n"]
+        if cab:
+            lines += [
+                f"✅ <b>Жами тўланган:</b> {fmt_money(cab['total_paid'])}",
+                f"💳 <b>Қолган қарз:</b> {fmt_money(cab['remaining_debt'])}",
+            ]
+        lines += [
             "",
             "<b>Тўловлар тарихи:</b>",
         ]

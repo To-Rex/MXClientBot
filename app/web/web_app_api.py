@@ -166,7 +166,10 @@ async def get_cabinet(auth: dict = Depends(authenticate_webapp_user)):
     cab = await svc.get_cabinet(*_creds(auth), client_id)
     if not cab:
         raise HTTPException(status_code=502, detail="Маълумот олинмади")
-    nxt = await svc.get_next_payment(*_creds(auth), client_id)
+    if "next_payment" in cab:  # real 1C answer carries it
+        nxt = cab.pop("next_payment")
+    else:
+        nxt = await svc.get_next_payment(*_creds(auth), client_id)
     # mock state is per-process: fall back to what we know from Telegram / DB
     if not cab.get("name") or cab.get("name") == "Мижоз":
         tg_name = f"{auth.get('first_name', '')} {auth.get('last_name', '')}".strip()
@@ -245,8 +248,8 @@ async def get_payments(auth: dict = Depends(authenticate_webapp_user)):
     cab = await svc.get_cabinet(*_creds(auth), client_id)
     return _ser({
         "payments": payments,
-        "total_paid": cab["total_paid"],
-        "remaining_debt": cab["remaining_debt"],
+        "total_paid": cab["total_paid"] if cab else sum(p["amount"] for p in payments),
+        "remaining_debt": cab["remaining_debt"] if cab else None,
     })
 
 

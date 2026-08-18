@@ -8,15 +8,81 @@ the whole bot flow can be exercised end-to-end.  When the 1C endpoints are
 ready, replace the bodies (or set NASIYA_MOCK=0 and fill the real branches) —
 handlers do not need to change.
 """
+import base64
 import hashlib
 import logging
 import random
 from datetime import date, datetime, timezone, timedelta
-from typing import Optional
+from typing import Any, Optional
 
-from app.config import NASIYA_MOCK
+import httpx
+
+from app.config import NASIYA_MOCK, NASIYA_REAL_ENDPOINTS
+from app.services.http_client import get_http_client
 
 logger = logging.getLogger(__name__)
+
+# ────────────────────────────────────────────────────────────────────────────
+# Real 1C HTTP-service helpers  ({base_url}/hs/client_bot/api/<endpoint>)
+# Only endpoints listed in NASIYA_REAL_ENDPOINTS are called; on any failure the
+# caller falls back to the mock so the bot keeps working.
+# ────────────────────────────────────────────────────────────────────────────
+API_PREFIX = "/hs/client_bot/api/"
+
+
+def _use_real(endpoint: str, base_url: str) -> bool:
+    return bool(base_url) and endpoint in NASIYA_REAL_ENDPOINTS
+
+
+async def _real_get(base_url: str, login: str, password: str, endpoint: str, params: dict) -> Optional[Any]:
+    """GET {base_url}/hs/client_bot/api/{endpoint}?... with Basic Auth. Returns parsed JSON or None."""
+    url = f"{base_url.rstrip('/')}{API_PREFIX}{endpoint}"
+    creds = base64.b64encode(f"{login}:{password}".encode()).decode()
+    headers = {"Authorization": f"Basic {creds}", "Accept": "application/json"}
+    logger.info("📡 1C %s REQUEST %s params=%s", endpoint, url, params)
+    try:
+        resp = await get_http_client().get(url, params=params, headers=headers)
+        logger.info("📡 1C %s RESPONSE %s: %s", endpoint, resp.status_code, resp.text[:500])
+        if resp.status_code != 200:
+            return None
+        return resp.json()
+    except (httpx.HTTPError, ValueError) as e:
+        logger.error("❌ 1C %s EXCEPTION %s: %s", endpoint, url, e)
+        return None
+
+
+def _to_float(v: Any, default: float = 0.0) -> float:
+    try:
+        return float(v) if v not in (None, "") else default
+    except (TypeError, ValueError):
+        return default
+
+
+def _to_int(v: Any, default: int = 0) -> int:
+    try:
+        return int(v) if v not in (None, "") else default
+    except (TypeError, ValueError):
+        return default
+
+
+def _parse_date(v: Any) -> Optional[date]:
+    """Accepts 'YYYY-MM-DD', 'YYYY-MM-DDTHH:MM:SS', 'DD.MM.YYYY', 'YYYYMMDD'."""
+    if not v:
+        return None
+    if isinstance(v, datetime):
+        return v.date()
+    if isinstance(v, date):
+        return v
+    s = str(v).strip()
+    for fmt in ("%Y-%m-%d", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%dT%H:%M:%S%z", "%d.%m.%Y", "%Y%m%d", "%Y-%m-%d %H:%M:%S"):
+        try:
+            return datetime.strptime(s[:len(fmt) + 6] if "%z" in fmt else s, fmt).date()
+        except ValueError:
+            continue
+    try:
+        return datetime.fromisoformat(s).date()
+    except ValueError:
+        return None
 
 # ────────────────────────────────────────────────────────────────────────────
 # Mock state (per process).  client_id -> {"contracts": [...], "payments": [...],
@@ -231,6 +297,58 @@ class NasiyaService:
 
     @staticmethod
     async def get_cabinet(base_url: str, login: str, password: str, client_id: str) -> Optional[dict]:
+        if _use_real("getClientInfo", base_url):
+            data = await _real_get(base_url, login, password, "getClientInfo", {"client_id": client_id})
+            if isinstance(data, dict) and (data.get("client_id") is not None or data.get("name")):
+                return NasiyaService._map_client_info(data, client_id)
+            # Connected endpoint must never silently show mock numbers:
+            # return None → bot/webapp show "маълумот олинмади", user retries later.
+            logger.error("getClientInfo: real 1C javob bermadi (client_id=%s)", client_id)
+            return None
+        return NasiyaService._mock_cabinet(client_id)
+
+    @staticmethod
+    def _map_client_info(d: dict, client_id: str) -> dict:
+        """Map 1C getClientInfo JSON → cabinet dict used by bot & webapp (see docs/1C_NASIYA_API.md §2)."""
+        nxt_raw = d.get("next_payment")
+        nxt = None
+        if isinstance(nxt_raw, dict) and nxt_raw.get("date"):
+            nd = _parse_date(nxt_raw.get("date"))
+            if nd:
+                nxt = {
+                    "date": nd,
+                    "amount": _to_float(nxt_raw.get("amount")),
+                    "contract_id": _to_int(nxt_raw.get("contract_id")),
+                    "contract_number": str(nxt_raw.get("contract_number") or ""),
+                    "status": "overdue" if nd < _today() else "pending",
+                }
+        reg = _parse_date(d.get("registered_at"))
+        local = _client(client_id)["profile"]  # keeps locally toggled reminders until setReminders is wired
+        # remember real name/phone so other (still-mock) screens show them too
+        if d.get("name"):
+            local["name"] = str(d["name"])
+        if d.get("phone"):
+            local["phone"] = str(d["phone"])
+        return {
+            "client_id": str(d.get("client_id") or client_id),
+            "name": str(d.get("name") or local.get("name") or "Мижоз"),
+            "phone": str(d.get("phone") or local.get("phone") or ""),
+            "status": str(d.get("status") or "Мижоз"),
+            "registered_at": _fmt_date(reg) if reg else str(d.get("registered_at") or ""),
+            "reminders_enabled": bool(local.get("reminders_enabled", True)),
+            "active_contracts": _to_int(d.get("active_contracts")),
+            "total_contracts": _to_int(d.get("total_contracts")),
+            "total_nasiya": _to_float(d.get("total_nasiya")),
+            "total_paid": _to_float(d.get("total_paid")),
+            "remaining_debt": _to_float(d.get("remaining_debt")),
+            "overdue_amount": _to_float(d.get("overdue_amount")),
+            "overdue_count": _to_int(d.get("overdue_count")),
+            "next_payment": nxt,
+            "source": "1c",
+        }
+
+    @staticmethod
+    def _mock_cabinet(client_id: str) -> dict:
         st = _client(client_id)
         views = [_contract_view(c) for c in st["contracts"]]
         active = [v for v in views if v["status"] != "closed"]
@@ -243,6 +361,7 @@ class NasiyaService:
             "remaining_debt": sum(v["remaining_debt"] for v in views),
             "overdue_amount": sum(v["overdue_amount"] for v in views),
             "overdue_count": sum(v["overdue_count"] for v in views),
+            "source": "mock",
         }
 
     @staticmethod
