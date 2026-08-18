@@ -255,7 +255,6 @@ a.lnk { color: var(--link); text-decoration: none; font-weight: 600; }
 
 <header class="top">
   <div class="brand"><div class="mark">MX</div><div style="min-width:0"><h1 id="companyName">MX Nasiya</h1><small>Насия бўйича шахсий кабинет</small></div></div>
-  <span class="pill" id="mockBadge" style="display:none" title="Тест маълумотлари">ДЕМО</span>
   <span class="id num" id="headerUserInfo"></span>
 </header>
 
@@ -326,7 +325,7 @@ async function api(method, path, body) {
   if (initData) headers['X-Telegram-Init-Data'] = initData;
   const r = await fetch(apiUrl(path), { method, headers, body: body ? JSON.stringify(body) : undefined });
   const d = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(d.detail || 'Хатолик юз берди. Қайта уриниб кўринг.');
+  if (!r.ok) { const err = new Error(d.detail || 'Хатолик юз берди. Қайта уриниб кўринг.'); err.code = d.code || (r.status === 503 ? 'SERVICE_UNAVAILABLE' : ''); err.status = r.status; throw err; }
   return d;
 }
 
@@ -351,6 +350,12 @@ const note = (t, m) => `<div class="note ${t}">${m}</div>`;
 const skeleton = (n = 3) => Array.from({ length: n }, () => `<div class="sk-card"><div class="sk sk-line" style="width:45%"></div><div class="sk sk-line" style="width:80%"></div><div class="sk sk-line" style="width:60%;margin:0"></div></div>`).join('');
 const load = id => { $(id).innerHTML = skeleton(); };
 const empty = (em, b, s, act = '') => `<div class="empty"><div class="em">${em}</div><b>${b}</b><span>${s}</span>${act}</div>`;
+function errBox(e, retry) {
+  if (e && e.code === 'SERVICE_UNAVAILABLE') {
+    return `<div class="empty"><div class="em">🛠</div><b>Бу хизмат тез кунда ишга тушади</b><span>Бўлим ҳозир тайёрланмоқда. Ноқулайлик учун узр — бироздан сўнг қайта уриниб кўринг.</span>${retry ? `<div style="margin-top:14px"><button class="btn line" onclick="${retry}">Қайта уриниш</button></div>` : ''}</div>`;
+  }
+  return `<div class="empty"><div class="em">⚠️</div><b>Хатолик</b><span>${esc(e && e.message || 'Қайта уриниб кўринг.')}</span>${retry ? `<div style="margin-top:14px"><button class="btn line" onclick="${retry}">Қайта уриниш</button></div>` : ''}</div>`;
+}
 let toastT;
 function toast(msg, type) {
   const t = $('toast'); t.textContent = msg; t.className = 'toast show' + (type === 'err' ? ' err' : '');
@@ -465,10 +470,10 @@ async function loadCabinet() {
       <button class="btn danger" onclick="doLogout()">Чиқиш</button>
     </div>`;
     animateBars($('viewCabinet'));
-  } catch (e) { $('viewCabinet').innerHTML = note('err', esc(e.message)); }
+  } catch (e) { $('viewCabinet').innerHTML = errBox(e, "loadCabinet()"); }
 }
 async function toggleReminders(on) {
-  try { await api('POST', '/reminders', { enabled: on }); toast(on ? 'Эслатмалар ёқилди' : 'Эслатмалар ўчирилди'); loadCabinet(); } catch (e) { toast(e.message, 'err'); }
+  try { await api('POST', '/reminders', { enabled: on }); toast(on ? 'Эслатмалар ёқилди' : 'Эслатмалар ўчирилди'); loadCabinet(); } catch (e) { toast(e.code === 'SERVICE_UNAVAILABLE' ? 'Эслатма созламаси тез кунда ишга тушади' : e.message, 'err'); }
 }
 
 /* ── debt / contracts ──────────────────────────────────────────────── */
@@ -501,7 +506,7 @@ async function loadDebt(id) {
       <button class="btn primary" onclick="go('pay')">${I.pay} Тўлов қилиш</button>
     </div>`;
     animateBars($('viewDebt'));
-  } catch (e) { $('viewDebt').innerHTML = note('err', esc(e.message)); }
+  } catch (e) { $('viewDebt').innerHTML = errBox(e, "loadDebt()"); }
 }
 async function loadContract(id) {
   load('viewDebt');
@@ -531,7 +536,7 @@ async function loadContract(id) {
       <div class="btns" style="margin-top:0"><button class="btn ghost" onclick="go('schedule', ${c.contract_id})">${I.schedule} График</button>${c.status !== 'closed' ? `<button class="btn primary" onclick="go('pay', ${c.contract_id})">${I.pay} Тўлаш</button>` : ''}</div>
     </div>`;
     animateBars($('viewDebt'));
-  } catch (e) { $('viewDebt').innerHTML = note('err', esc(e.message)); }
+  } catch (e) { $('viewDebt').innerHTML = errBox(e, "go('debt')"); }
 }
 
 /* ── schedule ──────────────────────────────────────────────────────── */
@@ -554,7 +559,7 @@ async function loadSchedule(id) {
     }
     sched = { contract_id: id || null, status: 'all' };
     await renderSchedule();
-  } catch (e) { $('viewSchedule').innerHTML = note('err', esc(e.message)); }
+  } catch (e) { $('viewSchedule').innerHTML = errBox(e, "loadSchedule()"); }
 }
 async function setSched(s) { sched.status = s; haptic('tap'); await renderSchedule(false); }
 async function renderSchedule(withSkeleton = true) {
@@ -595,7 +600,7 @@ async function loadPay(id) {
     if (!c || c.status === 'closed') return $('viewPay').innerHTML = note('info', 'Бу шартнома бўйича қарз йўқ.');
     pay = { contract: c, contract_id: c.contract_id, amount: null, method: null };
     stepAmount();
-  } catch (e) { $('viewPay').innerHTML = note('err', esc(e.message)); }
+  } catch (e) { $('viewPay').innerHTML = errBox(e, "loadPay()"); }
 }
 function stepAmount() {
   const c = pay.contract, opts = [];
@@ -624,7 +629,6 @@ async function stepMethod() {
     <h2 class="t">Қандай тўлайсиз?</h2>
     <div class="card"><div class="kv" style="padding-top:0"><span class="k">Сумма</span><span class="v">${money(pay.amount)}</span></div><div class="kv" style="padding-bottom:0"><span class="k">Тўловдан кейин қарз</span><span class="v">${money(after)}</span></div></div>
     <div class="pm" role="radiogroup">${m.methods.map(x => `<button id="pm_${x.key}" role="radio" aria-checked="false" style="--pm-color:${x.color}" onclick="pickMethod('${x.key}')"><span class="logo" style="background:${x.color}">${x.label[0]}</span>${x.label}</button>`).join('')}</div>
-    ${m.mock ? note('warn', '<span>ℹ️</span><span>Демо режим: тўлов симуляция қилинади, пул ечилмайди.</span>') : ''}
     <div id="payErr"></div>
     <button class="btn primary" id="payInit" onclick="stepCheckout()" disabled>Тўловга ўтиш</button>`;
   if (pay.method) pickMethod(pay.method);
@@ -638,7 +642,7 @@ async function stepCheckout() {
   const b = $('payInit'); b.disabled = true; b.textContent = 'Тайёрланмоқда…';
   try {
     const r = await api('POST', '/payments/init', { contract_id: pay.contract_id, amount: pay.amount, method: pay.method });
-    pay.amount = r.amount;
+    pay.amount = r.amount; pay.payment_id = r.payment_id;
     $('viewPay').innerHTML = `${backBtn('Тўлов усули', 'stepMethod()')}${steps(3)}
       <h2 class="t">${esc(r.method.label)} орқали тўлов</h2>
       <div class="card">
@@ -648,18 +652,21 @@ async function stepCheckout() {
       </div>
       <div class="card">
         <ol style="padding-left:20px;font-size:14px;line-height:1.7;margin-bottom:12px"><li><b>«${esc(r.method.label)} да тўлаш»</b> тугмасини босинг ва тўловни амалга оширинг.</li><li>Қайтиб <b>«Тўладим»</b> тугмасини босинг — квитанция шу ерда чиқади.</li></ol>
-        ${r.mock ? note('warn', '<span>ℹ️</span><span>Демо: ҳавола намунавий, тўлов симуляция қилинади.</span>') : ''}
         <button class="btn primary" style="background:${r.method.color};color:#fff" onclick="openLink('${r.checkout_url}')">🔗 ${esc(r.method.label)} да тўлаш</button>
         <div class="btns"><button class="btn line" onclick="confirmPay()">Тўладим — тасдиқлаш</button></div>
-        <div style="margin-top:8px"><button class="btn danger" onclick="go('pay')">Бекор қилиш</button></div>
+        <div style="margin-top:8px"><button class="btn danger" onclick="cancelPay()">Бекор қилиш</button></div>
       </div>`;
-  } catch (e) { $('payErr').innerHTML = note('err', esc(e.message)); b.disabled = false; b.textContent = 'Тўловга ўтиш'; }
+  } catch (e) { $('payErr').innerHTML = e.code === 'SERVICE_UNAVAILABLE' ? note('warn', '<span>🛠</span><span>Онлайн тўлов хизмати тез кунда ишга тушади.</span>') : note('err', esc(e.message)); b.disabled = false; b.textContent = 'Тўловга ўтиш'; }
+}
+async function cancelPay() {
+  if (pay.payment_id) { try { await api('POST', '/payments/cancel', { payment_id: pay.payment_id }); } catch (e) {} }
+  pay.payment_id = null; go('pay');
 }
 function openLink(u) { try { Tg.openLink(u); } catch (e) { window.open(u, '_blank'); } }
 async function confirmPay() {
   const btn = document.querySelector('#viewPay .btn.line'); if (btn) { btn.disabled = true; btn.textContent = 'Текширилмоқда…'; }
   try {
-    const r = await api('POST', '/payments', { contract_id: pay.contract_id, amount: pay.amount, method: pay.method });
+    const r = await api('POST', '/payments', { contract_id: pay.contract_id, amount: pay.amount, method: pay.method, payment_id: pay.payment_id || null });
     contractsCache = null; toast('Тўлов қабул қилинди');
     $('viewPay').innerHTML = `<div class="stagger">
       <div class="card" style="text-align:center;padding-top:22px"><div class="check">${I.ok}</div><h2 class="t" style="margin-bottom:2px">Тўлов қабул қилинди</h2><div style="font-size:26px;font-weight:800;letter-spacing:-.02em">${money(r.amount)}</div>
@@ -671,10 +678,10 @@ async function confirmPay() {
         <div class="kv"><span class="k">Сумма</span><span class="v">${money(r.amount)}</span></div>
         <div class="kv"><span class="k">Усул</span><span class="v">${esc(r.method)}</span></div>
         ${r.next_payment_date ? `<div class="kv"><span class="k">Кейинги тўлов</span><span class="v">${money(r.next_payment_amount)} · ${r.next_payment_date}</span></div>` : ''}
-      </div>${r.mock ? '<div style="margin-top:14px">' + note('warn', '<span>ℹ️</span><span>Демо: тўлов ҳақиқий эмас.</span>') + '</div>' : ''}</div>
+      </div></div>
       <div class="btns" style="margin-top:0"><button class="btn ghost" onclick="go('schedule')">График</button><button class="btn ghost" onclick="go('payments')">Тўловлар</button></div>
       <button class="btn primary" style="margin-top:10px" onclick="go('cabinet')">Кабинетга қайтиш</button></div>`;
-  } catch (e) { toast(e.message, 'err'); if (btn) { btn.disabled = false; btn.textContent = 'Тўладим — тасдиқлаш'; } }
+  } catch (e) { toast(e.code === 'SERVICE_UNAVAILABLE' ? 'Онлайн тўлов хизмати тез кунда ишга тушади' : e.message, 'err'); if (btn) { btn.disabled = false; btn.textContent = 'Тўладим — тасдиқлаш'; } }
 }
 
 /* ── payments history ──────────────────────────────────────────────── */
@@ -689,7 +696,7 @@ async function loadPayments() {
         <div style="font-size:13px;color:var(--muted);margin-top:3px">${esc(p.contract_number)} · ${esc(p.method)} · ${esc(p.note || '')}</div>
         <div style="font-size:12px;color:var(--faint);margin-top:2px" class="num">Квитанция ${esc(p.receipt_no)}</div></div>`).join('') : empty('🧾', 'Тўловлар йўқ', 'Биринчи тўловни ҳозир қилишингиз мумкин.')}
       <button class="btn primary" onclick="go('pay')">${I.pay} Тўлов қилиш</button></div>`;
-  } catch (e) { $('viewPayments').innerHTML = note('err', esc(e.message)); }
+  } catch (e) { $('viewPayments').innerHTML = errBox(e, "loadPayments()"); }
 }
 
 /* ── purchases ─────────────────────────────────────────────────────── */
@@ -705,7 +712,7 @@ async function loadPurchases() {
         <div style="font-size:12.5px;color:var(--muted);margin:2px 0 6px">Шартнома ${esc(r.contract_number)}</div>
         ${r.products.map(p => `<div class="kv"><span>${esc(p.name)} <span style="color:var(--muted)">× ${p.qty}</span></span><span class="v">${money(p.sum)}</span></div>`).join('')}
         <div class="kv"><span class="k">Жами</span><span class="v">${money(r.total)}</span></div></div>`).join('')}</div>`;
-  } catch (e) { $('viewPurchases').innerHTML = note('err', esc(e.message)); }
+  } catch (e) { $('viewPurchases').innerHTML = errBox(e, "loadPurchases()"); }
 }
 
 /* ── help ──────────────────────────────────────────────────────────── */
@@ -732,7 +739,7 @@ async function loadHelp() {
       <div class="eyebrow" style="margin:4px 2px 8px">Филиаллар · ${i.branches.length}</div>
       ${i.branches.map(b => `<div class="card" style="padding:13px 16px"><b>${esc(b.name)}</b><div style="font-size:13px;color:var(--muted);margin-top:4px;line-height:1.6">📍 ${esc(b.address)}<br><a class="lnk num" href="${tel(b.phone)}">${esc(b.phone)}</a> · 🕘 ${esc(b.hours)}</div></div>`).join('')}</div>`;
     reqKind = 'request';
-  } catch (e) { $('viewHelp').innerHTML = note('err', esc(e.message)); }
+  } catch (e) { $('viewHelp').innerHTML = errBox(e, "loadHelp()"); }
 }
 let reqKind = 'request';
 function setKind(k) { reqKind = k; ['request', 'question'].forEach(x => $('k_' + x).classList.toggle('active', x === k)); haptic('tap'); }
@@ -743,7 +750,7 @@ async function sendRequest() {
     const r = await api('POST', '/requests', { kind: reqKind, text });
     $('reqText').value = ''; toast('Юборилди');
     $('reqMsg').innerHTML = note('ok', `<span>✓</span><span>${reqKind === 'request' ? 'Мурожаатингиз' : 'Саволингиз'} қабул қилинди (№ ${r.id}). Оператор тез орада боғланади.</span>`);
-  } catch (e) { $('reqMsg').innerHTML = note('err', esc(e.message)); }
+  } catch (e) { $('reqMsg').innerHTML = e.code === 'SERVICE_UNAVAILABLE' ? note('warn', '<span>🛠</span><span>Мурожаат хизмати тез кунда ишга тушади. Ҳозирча операторга қўнғироқ қилинг.</span>') : note('err', esc(e.message)); }
 }
 
 /* ── promo ─────────────────────────────────────────────────────────── */
@@ -756,7 +763,7 @@ async function loadPromo(kind, soft) {
     $('viewPromo').innerHTML = `<h2 class="t">Акциялар ва хабарлар</h2>
       <div class="chips" role="tablist">${T.map(([k, l]) => `<button class="chip ${kind === k ? 'active' : ''}" onclick="loadPromo('${k}', true)">${l}</button>`).join('')}</div>
       <div class="stagger">${items.length ? items.map(i => `<div class="card promo promo-${i.type}"><b>${esc(i.title)}</b><p style="font-size:14px;margin-top:4px;color:var(--text)">${esc(i.text)}</p>${i.valid_until ? `<div style="font-size:12px;color:var(--muted);margin-top:8px">Муддати: ${esc(i.valid_until)}</div>` : ''}</div>`).join('') : empty('🎁', 'Ҳозирча йўқ', 'Янги акциялар пайдо бўлганда шу ерда кўринади.')}</div>`;
-  } catch (e) { $('viewPromo').innerHTML = note('err', esc(e.message)); }
+  } catch (e) { $('viewPromo').innerHTML = errBox(e, "loadPromo('all')"); }
 }
 
 /* ── more ──────────────────────────────────────────────────────────── */
@@ -772,7 +779,6 @@ async function init() {
   try {
     user = await api('GET', '/user');
     setHeader(user.company_name, user.client_id);
-    if (user.mock) $('mockBadge').style.display = '';
     if (user.registered) $('railOut').style.display = '';
     const [h, harg] = (location.hash || '').slice(1).split('/');
     const known = ['cabinet','debt','schedule','pay','payments','purchases','help','promo','more'];

@@ -17,7 +17,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, AsyncSession
 
 from app.config import REMINDER_INTERVAL
 from app.models import User
-from app.services.nasiya_api import NasiyaService
+from app.services.nasiya_api import NasiyaService, ServiceUnavailable, NasiyaError
 
 logger = logging.getLogger(__name__)
 
@@ -98,6 +98,11 @@ async def reminder_loop(bot: Bot, bot_id: int, creds: tuple, session_factory: as
             for user in users:
                 try:
                     await _check_user(bot, bot_id, creds, user)
+                except ServiceUnavailable as e:
+                    logger.info("reminders: 1C %s not ready yet — skip this round", e.endpoint)
+                    break
+                except NasiyaError as e:
+                    logger.debug("reminders: 1C error for tg=%s: %s", user.telegram_id, e)
                 except Exception as e:
                     logger.warning("reminder check failed bot=%s tg=%s: %s", bot_id, user.telegram_id, e)
                 await asyncio.sleep(0.05)

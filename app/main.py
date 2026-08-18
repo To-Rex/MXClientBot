@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from jinja2 import Environment, FileSystemLoader
 from starlette.middleware.sessions import SessionMiddleware
 
@@ -12,6 +12,7 @@ from app.database import async_session, engine
 from app.models import Base
 from app.services.bot_manager import BotManager
 from app.services.http_client import close_http_client
+from app.services.nasiya_api import NasiyaError, ServiceUnavailable
 from app.web.auth import AuthMiddleware, router as auth_router
 from app.web.routes import router as web_router
 from app.web.web_app_api import router as webapp_api_router
@@ -55,6 +56,21 @@ app = FastAPI(title="Telegram Multi Bot Manager", lifespan=lifespan)
 
 app.add_middleware(AuthMiddleware)
 app.add_middleware(SessionMiddleware, secret_key=SESSION_SECRET_KEY)
+
+SOON_MESSAGE = "Бу хизмат тез кунда ишга тушади. Ноқулайлик учун узр — бироздан сўнг қайта уриниб кўринг."
+
+
+@app.exception_handler(ServiceUnavailable)
+async def _service_unavailable_handler(request: Request, exc: ServiceUnavailable):
+    logger.warning("1C service unavailable: %s (%s)", exc.endpoint, exc.reason)
+    return JSONResponse(status_code=503, content={"detail": SOON_MESSAGE, "code": "SERVICE_UNAVAILABLE", "endpoint": exc.endpoint})
+
+
+@app.exception_handler(NasiyaError)
+async def _nasiya_error_handler(request: Request, exc: NasiyaError):
+    logger.warning("1C error %s: %s (%s)", exc.code, exc.message, exc.endpoint)
+    return JSONResponse(status_code=400, content={"detail": exc.message, "code": exc.code})
+
 
 app.include_router(auth_router)
 app.include_router(web_router)

@@ -43,15 +43,8 @@ try:
 except ValueError:
     PRODUCTS_CACHE_TTL = 30
 
-# Nasiya ma'lumotlari: 1 = mock (in-memory), 0 = real 1C (endpointlar tayyor bo'lganda)
-NASIYA_MOCK = os.getenv("NASIYA_MOCK", "1").strip() not in ("0", "false", "False", "no")
 # Eslatmalar (to'lov yaqinlashganda / kechikkanda) tekshiruv oralig'i, soniya. 0 = o'chirilgan.
 try:
     REMINDER_INTERVAL = int(os.getenv("REMINDER_INTERVAL", "3600"))
 except ValueError:
     REMINDER_INTERVAL = 3600
-# Real 1C ga ulangan endpointlar (vergul bilan). Ro'yxatdagilar real API dan,
-# qolganlari mock'dan olinadi. Real API xato bersa — mock'ga qaytadi (fallback).
-NASIYA_REAL_ENDPOINTS = {
-    e.strip() for e in os.getenv("NASIYA_REAL_ENDPOINTS", "getClientInfo").split(",") if e.strip()
-}

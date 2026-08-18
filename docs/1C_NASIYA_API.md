@@ -2,11 +2,11 @@
 
 Telegram bot va WebApp (mijozning nasiya bo'yicha shaxsiy kabineti) uchun 1C:Enterprise tomonida yaratilishi kerak bo'lgan HTTP-servis.
 
-Hozir bot **mock** ma'lumotlar bilan ishlaydi (`app/services/nasiya_api.py`). Shu hujjatdagi endpointlar tayyor bo'lgach, o'sha servis metodlari real so'rovlarga almashtiriladi — bot va WebApp kodi o'zgarmaydi.
+Bot va WebApp **barcha** endpointlarga ulangan (`app/services/nasiya_api.py`). 1C da hali tayyor bo'lmagan endpoint (404/5xx, bo'sh yoki noto'g'ri shakldagi javob) uchun foydalanuvchiga «Бу хизмат тез кунда ишга тушади» ko'rsatiladi; endpoint tayyor bo'lgach hech qanday o'zgarishsiz ishlay boshlaydi.
 
 Bugungi kunda tayyor va botga ulangan: **`checkNumber`** (1-bo'lim), **`getClientInfo`** (2-bo'lim). Qolganlari — yaratilishi kerak.
 
-> Ulash tartibi: `.env` dagi `NASIYA_REAL_ENDPOINTS` ro'yxatiga endpoint nomi qo'shiladi (masalan `getClientInfo,getContracts`). Ro'yxatdagilar real 1C dan olinadi, qolganlari mock; real API xato bersa bot avtomatik mock'ga qaytadi.
+> **Muhim:** 1C hozir mavjud bo'lmagan GET manzillarga ham `200` + bo'sh tana (yoki `getContracts` uchun `getClientInfo` javobi) qaytaryapti. Bot buni «tayyor emas» deb hisoblaydi (javob shakli tekshiriladi). Endpoint tayyor bo'lganda javob aynan shu hujjatdagi shaklda bo'lishi shart.
 
 ---
 

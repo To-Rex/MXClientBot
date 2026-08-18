@@ -142,8 +142,7 @@ Access at `http://localhost:8000/panel` (login required)
    - **🎁 Акциялар** — акциялар, янги товарлар, махсус таклифлар, хабарлар
 4. **Эслатмалар** (`app/services/reminders.py`) — тўловга 3 кун қолганда, тўлов куни, кечикканда (`REMINDER_INTERVAL`)
 
-> **Маълумот манбаи:** `app/services/nasiya_api.py` — ҳозирча **mock** (`NASIYA_MOCK=1`, in-memory).
-> 1C endpointлари тайёр бўлганда шу сервис методлари реал API га уланади — handlerлар ўзгармайди.
+> **Маълумот манбаи:** `app/services/nasiya_api.py` — реал 1C HTTP-сервис (`docs/1C_NASIYA_API.md`). 1C да ҳали тайёр бўлмаган endpoint учун бот ва WebApp «Бу хизмат тез кунда ишга тушади» деб кўрсатади.
 
 ### APIs Integrated
 

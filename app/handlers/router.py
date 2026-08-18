@@ -4,7 +4,9 @@ Sections (TZ):
   1. Login (phone → 1C checkNumber)          — unchanged, production
   2. 👤 Кабинет   3. 💳 Қарзим   4. 📅 Графигим   5. 💰 Тўлов қилиш / 🧾 Тўловлар
   6. 🛍 Харидлар  7. Эслатмалар (reminders task)  8. 📞 Ёрдам  9. 🎁 Акциялар
-Data comes from ``NasiyaService`` (mock now, 1C later) — handlers stay the same.
+Data comes from ``NasiyaService`` (real 1C HTTP-service, docs/1C_NASIYA_API.md).
+Endpoints 1C has not implemented yet raise ServiceUnavailable → the user sees
+"бу хизмат тез кунда ишга тушади" (see error handlers at the bottom).
 """
 import logging
 import secrets
@@ -12,11 +14,12 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from aiogram import F, Router
-from aiogram.filters import Command
+from aiogram.filters import Command, ExceptionTypeFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import (
     CallbackQuery,
+    ErrorEvent,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
     KeyboardButton,
@@ -29,7 +32,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, AsyncSession
 from app.config import WEBAPP_URL
 from app.models import CartItem, User, WebSession
 from app.services.api import APIService
-from app.services.nasiya_api import NasiyaService
+from app.services.nasiya_api import NasiyaError, NasiyaService, ServiceUnavailable
 
 SESSION_TTL_HOURS = 24 * 30  # 30 days
 
@@ -312,8 +315,6 @@ def create_router(
             client_id = str(result["id"])
 
             await _save_user(session_factory, message.from_user.id, bot_id, phone, client_id)
-            # let the cabinet show the real name/phone from 1C
-            await svc.set_profile_basics(client_id, name=str(result.get("name") or ""), phone=phone)
 
             name = result.get("name") or ""
             hello = f"✅ Рўйхатдан муваффақиятли ўтдингиз{', ' + name if name else ''}!"
@@ -386,7 +387,7 @@ def create_router(
         if not cab:
             await callback.answer("❌ Маълумот олинмади. Кейинроқ уриниб кўринг.", show_alert=True)
             return
-        await svc.set_reminders(client_id, not cab.get("reminders_enabled"))
+        await svc.set_reminders(*creds, client_id, not cab.get("reminders_enabled"), chat_id=str(callback.from_user.id))
         cab = await svc.get_cabinet(*creds, client_id)
         if not cab:
             await callback.answer("❌ Маълумот олинмади.", show_alert=True)
@@ -643,7 +644,7 @@ def create_router(
             pass  # same content → Telegram rejects the edit
 
     # ════════════════════════════════════════════════════════════════════
-    # 5. 💰 ТЎЛОВ ҚИЛИШ — online payment (mock)  /  🧾 ТЎЛОВЛАР — history
+    # 5. 💰 ТЎЛОВ ҚИЛИШ — online payment (Payme/Click/Paynet → 1C createPayment/confirmPayment)  /  🧾 ТЎЛОВЛАР
     # ════════════════════════════════════════════════════════════════════
     async def _pay_pick_contract(target: Message, client_id: str, edit: bool = False):
         contracts = [c for c in await svc.get_contracts(*creds, client_id) if c["status"] != "closed"]
@@ -898,7 +899,8 @@ def create_router(
             return
         method_label = PAY_METHODS[method][0]
         await callback.answer("Тўлов текширилмоқда…")
-        result = await svc.make_payment(*creds, client_id, int(contract_id), float(amount), method=method_label)
+        result = await svc.make_payment(*creds, client_id, int(contract_id), float(amount), method=method,
+                                        chat_id=str(callback.from_user.id), source="telegram_bot")
         await state.clear()
         if not result or not result.get("success"):
             await callback.message.answer("❌ Тўлов амалга ошмади. Кейинроқ уриниб кўринг ёки оператор билан боғланинг.")
@@ -918,8 +920,6 @@ def create_router(
             lines.append("🎉 Шартнома тўлиқ ёпилди! Раҳмат!")
         elif result.get("next_payment_date"):
             lines.append(f"⏭ Кейинги тўлов: {fmt_money(result['next_payment_amount'])} — {fmt_date(result['next_payment_date'])}")
-        if svc.is_mock():
-            lines.append("\n<i>ℹ️ Тест режими: тўлов ҳақиқий эмас (mock).</i>")
         kb = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="📅 Графигим", callback_data="sched_all"),
              InlineKeyboardButton(text="🧾 Тўловлар", callback_data="payments_list")],
@@ -1091,7 +1091,7 @@ def create_router(
         if not text:
             await message.answer("Илтимос, матн юборинг.")
             return
-        res = await svc.create_request(*creds, client_id, kind, text, telegram_id=message.from_user.id)
+        res = await svc.create_request(*creds, client_id, kind, text, telegram_id=message.from_user.id, source="telegram_bot")
         await state.clear()
         if res and res.get("success"):
             label = "Мурожаатингиз" if kind == "request" else "Савол/таклифингиз"
@@ -1112,7 +1112,7 @@ def create_router(
         return InlineKeyboardMarkup(inline_keyboard=[row[:3], row[3:]])
 
     async def _promo_text(kind: str) -> str:
-        items = await svc.get_promotions(*creds)
+        items = await svc.get_promotions(*creds, kind)
         if kind != "all":
             items = [i for i in items if i["type"] == kind]
         lines = ["<b>🎁 Акциялар ва хабарлар</b>\n"]
@@ -1134,6 +1134,39 @@ def create_router(
             await callback.message.edit_text(await _promo_text(kind), reply_markup=_promo_kb(kind))
         except Exception:
             pass
+
+    # ── 1C service errors → friendly messages (one place for all handlers) ─
+    SOON_TEXT = (
+        "🛠 <b>Бу хизмат тез кунда ишга тушади.</b>\n\n"
+        "Ҳозирча бу бўлим тайёрланмоқда. Ноқулайлик учун узр сўраймиз — "
+        "бироздан сўнг қайта уриниб кўринг."
+    )
+
+    async def _reply_error(event: ErrorEvent, text: str, alert: bool = False):
+        upd = event.update
+        try:
+            if upd.callback_query:
+                if alert:
+                    await upd.callback_query.answer(text.replace("<b>", "").replace("</b>", "")[:190], show_alert=True)
+                else:
+                    await upd.callback_query.answer()
+                    await upd.callback_query.message.answer(text, reply_markup=main_menu_keyboard())
+            elif upd.message:
+                await upd.message.answer(text, reply_markup=main_menu_keyboard())
+        except Exception as e:  # never let the error handler itself explode
+            logger.debug("error reply failed: %s", e)
+
+    @router.errors(ExceptionTypeFilter(ServiceUnavailable))
+    async def on_service_unavailable(event: ErrorEvent):
+        exc: ServiceUnavailable = event.exception  # type: ignore[assignment]
+        logger.warning("1C service unavailable: %s (%s)", exc.endpoint, exc.reason)
+        await _reply_error(event, SOON_TEXT)
+
+    @router.errors(ExceptionTypeFilter(NasiyaError))
+    async def on_nasiya_error(event: ErrorEvent):
+        exc: NasiyaError = event.exception  # type: ignore[assignment]
+        logger.warning("1C error %s: %s (%s)", exc.code, exc.message, exc.endpoint)
+        await _reply_error(event, f"❌ {exc.message}", alert=True)
 
     # ── generic cancel outside of a state ───────────────────────────────
     @router.message(F.text == BTN_CANCEL)

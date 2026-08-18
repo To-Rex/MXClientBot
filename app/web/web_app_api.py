@@ -1,7 +1,8 @@
 """WebApp JSON API — MX Nasiya personal cabinet (mirrors the Telegram bot).
 
 Auth: Telegram initData (X-Telegram-Init-Data) or ?session=<token> from /getsession.
-Data: ``NasiyaService`` (mock now, 1C later) — same service the bot uses.
+Data: ``NasiyaService`` (real 1C HTTP-service) — same service the bot uses.
+1C endpoints that are not ready → 503 {"code": "SERVICE_UNAVAILABLE"} (handled in app/main.py).
 """
 import logging
 from datetime import date, datetime
@@ -104,7 +105,6 @@ async def get_user(auth: dict = Depends(authenticate_webapp_user)):
         "phone_number": user.phone_number if user else None,
         "client_id": user.client_id if user else None,
         "company_name": auth["bot_config"]["company_name"],
-        "mock": svc.is_mock(),
     }
 
 
@@ -126,7 +126,6 @@ async def register_device(req: RegisterRequest, auth: dict = Depends(authenticat
 
     client_id = str(result["id"])
     await _save_user(auth["telegram_id"], auth["bot_id"], phone, client_id)
-    await svc.set_profile_basics(client_id, name=str(result.get("name") or ""), phone=phone)
 
     return {"success": True, "client_id": client_id, "name": result.get("name") or ""}
 
@@ -164,16 +163,7 @@ async def logout(auth: dict = Depends(authenticate_webapp_user)):
 async def get_cabinet(auth: dict = Depends(authenticate_webapp_user)):
     client_id = await _require_client(auth)
     cab = await svc.get_cabinet(*_creds(auth), client_id)
-    if not cab:
-        raise HTTPException(status_code=502, detail="Маълумот олинмади")
-    if "next_payment" in cab:  # real 1C answer carries it
-        nxt = cab.pop("next_payment")
-    else:
-        nxt = await svc.get_next_payment(*_creds(auth), client_id)
-    # mock state is per-process: fall back to what we know from Telegram / DB
-    if not cab.get("name") or cab.get("name") == "Мижоз":
-        tg_name = f"{auth.get('first_name', '')} {auth.get('last_name', '')}".strip()
-        cab["name"] = tg_name or cab.get("name") or "Мижоз"
+    nxt = cab.pop("next_payment", None)
     if not cab.get("phone"):
         user = await _get_user(auth["telegram_id"], auth["bot_id"])
         cab["phone"] = (user.phone_number if user else "") or ""
@@ -187,8 +177,8 @@ class RemindersRequest(BaseModel):
 @router.post("/reminders")
 async def set_reminders(req: RemindersRequest, auth: dict = Depends(authenticate_webapp_user)):
     client_id = await _require_client(auth)
-    await svc.set_reminders(client_id, req.enabled)
-    return {"success": True, "enabled": req.enabled}
+    enabled = await svc.set_reminders(*_creds(auth), client_id, req.enabled, chat_id=str(auth["telegram_id"]))
+    return {"success": True, "enabled": enabled}
 
 
 # ── 3. contracts / debt ─────────────────────────────────────────────────────
@@ -238,7 +228,7 @@ async def get_schedule(
 # ── 5. payments ─────────────────────────────────────────────────────────────
 @router.get("/payment-methods")
 async def get_payment_methods(auth: dict = Depends(authenticate_webapp_user)):
-    return {"methods": list(PAY_METHODS.values()), "mock": svc.is_mock()}
+    return {"methods": list(PAY_METHODS.values())}
 
 
 @router.get("/payments")
@@ -257,49 +247,58 @@ class PaymentInit(BaseModel):
     contract_id: int
     amount: float
     method: str
+    payment_id: Optional[int] = None
 
 
 @router.post("/payments/init")
 async def init_payment(req: PaymentInit, auth: dict = Depends(authenticate_webapp_user)):
-    """Step 1: validate & return a (demo) checkout link for the chosen provider."""
+    """Step 1: 1C createPayment → pending payment + (demo) checkout link for the provider."""
     client_id = await _require_client(auth)
     if req.method not in PAY_METHODS:
         raise HTTPException(status_code=400, detail="Нотўғри тўлов усули")
-    c = await svc.get_contract(*_creds(auth), client_id, req.contract_id)
-    if not c or c["status"] == "closed":
-        raise HTTPException(status_code=400, detail="Бу шартнома бўйича қарз йўқ")
-    amount = float(req.amount)
-    if amount <= 0:
+    if req.amount <= 0:
         raise HTTPException(status_code=400, detail="Нотўғри сумма")
-    if amount > c["remaining_debt"] + 0.5:
-        amount = c["remaining_debt"]
+    created = await svc.create_payment(*_creds(auth), client_id, req.contract_id, float(req.amount),
+                                       req.method, chat_id=str(auth["telegram_id"]), source="webapp")
     m = PAY_METHODS[req.method]
-    checkout_url = f"{m['url']}?merchant=mxnasiya&contract={c['number']}&amount={int(amount) * 100}"
+    checkout_url = f"{m['url']}?merchant=mxnasiya&order={created['payment_id']}&amount={int(created['amount']) * 100}"
     return _ser({
-        "contract_number": c["number"],
-        "amount": amount,
-        "after": max(0.0, c["remaining_debt"] - amount),
+        "payment_id": created["payment_id"],
+        "contract_number": created["contract_number"],
+        "amount": created["amount"],
+        "after": created["remaining_after"],
+        "expires_at": created["expires_at"],
         "method": m,
         "checkout_url": checkout_url,
-        "mock": svc.is_mock(),
     })
 
 
 @router.post("/payments")
-async def make_payment(req: PaymentInit, auth: dict = Depends(authenticate_webapp_user)):
-    """Step 2: confirm — apply the payment and return the receipt."""
+async def confirm_payment(req: PaymentInit, auth: dict = Depends(authenticate_webapp_user)):
+    """Step 2: confirm — 1C confirmPayment (creates the pending payment first if init was skipped)."""
     client_id = await _require_client(auth)
     if req.method not in PAY_METHODS:
         raise HTTPException(status_code=400, detail="Нотўғри тўлов усули")
     if req.amount <= 0:
         raise HTTPException(status_code=400, detail="Нотўғри сумма")
     result = await svc.make_payment(
-        *_creds(auth), client_id, req.contract_id, float(req.amount),
-        method=PAY_METHODS[req.method]["label"],
+        *_creds(auth), client_id, req.contract_id, float(req.amount), method=req.method,
+        chat_id=str(auth["telegram_id"]), source="webapp", payment_id=req.payment_id,
     )
-    if not result or not result.get("success"):
+    if not result.get("success"):
         raise HTTPException(status_code=400, detail="Тўлов амалга ошмади")
-    return _ser({**result, "method": PAY_METHODS[req.method]["label"], "mock": svc.is_mock()})
+    return _ser({**result, "method": result.get("method") or PAY_METHODS[req.method]["label"]})
+
+
+class PaymentCancel(BaseModel):
+    payment_id: int
+
+
+@router.post("/payments/cancel")
+async def cancel_payment(req: PaymentCancel, auth: dict = Depends(authenticate_webapp_user)):
+    await _require_client(auth)
+    ok = await svc.cancel_payment(*_creds(auth), req.payment_id, "user_cancel")
+    return {"success": ok}
 
 
 # ── 6. purchases ────────────────────────────────────────────────────────────
@@ -328,7 +327,7 @@ async def create_request(req: SupportRequest, auth: dict = Depends(authenticate_
     if not text:
         raise HTTPException(status_code=400, detail="Матн киритинг")
     kind = "request" if req.kind != "question" else "question"
-    res = await svc.create_request(*_creds(auth), client_id, kind, text, telegram_id=auth["telegram_id"])
+    res = await svc.create_request(*_creds(auth), client_id, kind, text, telegram_id=auth["telegram_id"], source="webapp")
     if not res or not res.get("success"):
         raise HTTPException(status_code=502, detail="Юборишда хатолик")
     return res
@@ -336,5 +335,5 @@ async def create_request(req: SupportRequest, auth: dict = Depends(authenticate_
 
 # ── 9. promotions ───────────────────────────────────────────────────────────
 @router.get("/promotions")
-async def get_promotions(auth: dict = Depends(authenticate_webapp_user)):
-    return {"items": await svc.get_promotions(*_creds(auth))}
+async def get_promotions(type: Optional[str] = None, auth: dict = Depends(authenticate_webapp_user)):
+    return {"items": await svc.get_promotions(*_creds(auth), type)}
