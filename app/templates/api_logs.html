@@ -1,0 +1,259 @@
+{% extends "base.html" %}
+{% block title %}1C API loglari{% endblock %}
+{% block content %}
+<style>
+  .al-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+  .al-head h1 { font-size: 22px; font-weight: 700; }
+  .al-head .sub { color: var(--text-muted); font-size: 13px; margin-top: 2px; }
+  .al-stats { display: flex; gap: 8px; flex-wrap: wrap; }
+  .al-stat { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 6px 12px; font-size: 13px; font-weight: 600; }
+  .al-stat b { font-variant-numeric: tabular-nums; }
+  .al-stat.ok b { color: var(--success); } .al-stat.err b { color: var(--danger); } .al-stat.soon b { color: var(--warning); }
+  .al-toolbar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 14px; }
+  .al-toolbar select { padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); font: inherit; font-size: 13px; }
+  .al-btn { padding: 8px 14px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
+  .al-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .al-btn.live.on { background: var(--success-subtle); border-color: var(--success); color: var(--success); }
+  .al-empty { text-align: center; color: var(--text-muted); padding: 60px 20px; background: var(--surface); border: 1px dashed var(--border); border-radius: var(--radius); }
+
+  .al-item { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 10px; overflow: hidden; box-shadow: var(--shadow); }
+  .al-row { display: flex; align-items: center; gap: 10px; padding: 10px 14px; cursor: pointer; user-select: none; flex-wrap: wrap; }
+  .al-row:hover { background: var(--accent-subtle); }
+  .al-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+  .al-dot.ok { background: var(--success); } .al-dot.error { background: var(--danger); } .al-dot.unavailable { background: var(--warning); }
+  .al-method { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 6px; letter-spacing: .04em; }
+  .al-method.GET { background: var(--accent-subtle); color: var(--accent); }
+  .al-method.POST { background: var(--warning-subtle); color: var(--warning); }
+  .al-ep { font-weight: 600; font-size: 14px; }
+  .al-status { font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .al-status.s2 { color: var(--success); } .al-status.s4, .al-status.s5 { color: var(--danger); } .al-status.s0 { color: var(--warning); }
+  .al-meta { margin-left: auto; display: flex; gap: 10px; align-items: center; color: var(--text-muted); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .al-err-badge { font-size: 11px; font-weight: 600; color: var(--danger); background: var(--danger-subtle); padding: 2px 8px; border-radius: 6px; max-width: 340px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .al-err-badge.soon { color: var(--warning); background: var(--warning-subtle); }
+  .al-detail { display: none; border-top: 1px solid var(--border); padding: 12px 14px; background: var(--bg); }
+  .al-item.open .al-detail { display: block; }
+  .al-detail .lbl { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--text-muted); margin: 10px 0 4px; }
+  .al-detail .lbl:first-child { margin-top: 0; }
+  .al-pre { background: #0f172a; color: #e2e8f0; border-radius: var(--radius-sm); padding: 10px 12px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; line-height: 1.55; overflow-x: auto; white-space: pre-wrap; word-break: break-word; max-height: 320px; overflow-y: auto; }
+  .al-pre.url { color: #93c5fd; }
+  .al-diff { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 4px; }
+  @media (max-width: 860px) { .al-diff { grid-template-columns: 1fr; } }
+  .al-diff .col { border-radius: var(--radius-sm); overflow: hidden; border: 1.5px solid var(--border); }
+  .al-diff .col.exp { border-color: var(--success); }
+  .al-diff .col.got { border-color: var(--danger); }
+  .al-diff .col-h { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; padding: 6px 10px; }
+  .al-diff .col.exp .col-h { background: var(--success-subtle); color: var(--success); }
+  .al-diff .col.got .col-h { background: var(--danger-subtle); color: var(--danger); }
+  .al-diff .al-pre { border-radius: 0; max-height: 380px; }
+  .al-mismatch { font-size: 13px; font-weight: 600; color: var(--danger); background: var(--danger-subtle); border-radius: var(--radius-sm); padding: 8px 12px; margin-top: 4px; }
+  .al-mismatch.soon { color: var(--warning); background: var(--warning-subtle); }
+  .al-new-btn { position: sticky; top: 10px; z-index: 5; display: none; margin: 0 auto 10px; padding: 8px 16px; border: 1px solid var(--accent); border-radius: 999px; background: var(--accent); color: #fff; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; box-shadow: var(--shadow-md); }
+  .al-new-btn.show { display: block; }
+</style>
+
+<div class="al-head">
+  <div>
+    <h1>1C API loglari</h1>
+    <div class="sub">Bot va WebApp'dan 1C HTTP-servisiga yuborilgan so'rovlar (oxirgi {{ max_entries }} ta, xotirada — restartda tozalanadi)</div>
+  </div>
+  <div class="al-stats" id="alStats"></div>
+</div>
+
+<div class="al-toolbar">
+  <select id="fEndpoint" onchange="applyFilters()"><option value="">Barcha endpointlar</option></select>
+  <select id="fOutcome" onchange="applyFilters()">
+    <option value="">Barcha natijalar</option>
+    <option value="ok">✓ Muvaffaqiyatli</option>
+    <option value="error">✗ Xato</option>
+    <option value="unavailable">⏳ Tayyor emas</option>
+  </select>
+  <button class="al-btn live on" id="liveBtn" onclick="toggleLive()">● Jonli</button>
+  <button class="al-btn" onclick="refresh(true)">Yangilash</button>
+  <button class="al-btn" onclick="clearLogs()">Tozalash</button>
+</div>
+
+<button class="al-new-btn" id="newBtn" onclick="showPending()">⬆ Yangi so'rovlar</button>
+<div id="alList"><div class="al-empty">Yuklanmoqda…</div></div>
+
+<script>
+let LOGS = [], live = true, timer = null, openIds = new Set();
+
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+function pretty(v) {
+  if (v == null || v === '') return null;
+  try { return JSON.stringify(JSON.parse(v), null, 2); } catch (e) { return String(v); }
+}
+function fmtTime(iso) {
+  const d = new Date(iso);
+  return d.toLocaleDateString('ru-RU') + ' ' + d.toLocaleTimeString('ru-RU');
+}
+const OUTCOME_LABEL = { ok: '', error: '', unavailable: 'tayyor emas' };
+
+let firstRender = true;
+async function refresh(manual) {
+  try {
+    const r = await fetch('/panel/api-logs/data');
+    if (!r.ok) return;
+    const d = await r.json();
+    LOGS = d.entries;
+    renderStats(d.stats);
+    renderEndpoints(d.endpoints);
+    if (manual || firstRender) { renderList(); firstRender = false; }
+    else applyIncremental();
+  } catch (e) { if (manual) alert('Yuklashda xatolik'); }
+}
+
+function renderStats(s) {
+  document.getElementById('alStats').innerHTML =
+    `<span class="al-stat">Jami <b>${s.total}</b></span>` +
+    `<span class="al-stat ok">OK <b>${s.ok}</b></span>` +
+    `<span class="al-stat err">Xato <b>${s.error}</b></span>` +
+    `<span class="al-stat soon">Tayyor emas <b>${s.unavailable}</b></span>`;
+}
+function renderEndpoints(eps) {
+  const sel = document.getElementById('fEndpoint');
+  const cur = sel.value;
+  sel.innerHTML = '<option value="">Barcha endpointlar</option>' + eps.map(e => `<option ${e===cur?'selected':''}>${esc(e)}</option>`).join('');
+}
+function applyFilters() { renderList(); }
+
+function matchesFilter(e) {
+  const fe = document.getElementById('fEndpoint').value;
+  const fo = document.getElementById('fOutcome').value;
+  return (!fe || e.endpoint === fe) && (!fo || e.outcome === fo);
+}
+function rowHTML(e) {
+  const sc = e.status_code == null ? '—' : e.status_code;
+  const scls = e.status_code == null ? 's0' : 's' + String(e.status_code)[0];
+  const err = e.error ? `<span class="al-err-badge ${e.outcome==='unavailable'?'soon':''}" title="${esc(e.error)}">${esc(e.error)}</span>` : '';
+  return `<div class="al-row" onclick="toggleItem(${e.id})">
+      <span class="al-dot ${e.outcome}" title="${e.outcome}"></span>
+      <span class="al-method ${e.method}">${e.method}</span>
+      <span class="al-ep">${esc(e.endpoint)}</span>
+      <span class="al-status ${scls}">${sc}</span>
+      ${err}
+      <span class="al-meta"><span>${e.duration_ms != null ? e.duration_ms + ' ms' : ''}</span><span>${fmtTime(e.time)}</span></span>
+    </div>`;
+}
+function detailHTML(e) {
+  const sc = e.status_code == null ? '—' : e.status_code;
+  const params = pretty(e.params), reqB = pretty(e.request_body), respB = pretty(e.response_body);
+  return `<div class="al-detail">
+      <div class="lbl">URL</div><pre class="al-pre url">${esc(e.url)}</pre>
+      ${params ? `<div class="lbl">Query parametrlar</div><pre class="al-pre">${esc(params)}</pre>` : ''}
+      ${reqB ? `<div class="lbl">So'rov tanasi (request body)</div><pre class="al-pre">${esc(reqB)}</pre>` : ''}
+      ${renderResponse(e, sc, respB)}
+    </div>`;
+}
+function itemHTML(e) {
+  return `<div class="al-item ${openIds.has(e.id) ? 'open' : ''}" id="it${e.id}" data-sig="${sig(e)}">${rowHTML(e)}${detailHTML(e)}</div>`;
+}
+const sig = e => `${e.outcome}|${e.status_code}|${(e.error || '').length}`;
+
+let maxRenderedId = 0, pendingCount = 0;
+
+function renderList() {
+  // Full redraw — only on load, filter change, "Yangilash", "Tozalash" yoki
+  // "Yangi so'rovlar" bosilganda (jonli tsiklda chaqirilmaydi, scroll saqlanadi).
+  const items = LOGS.filter(matchesFilter);
+  const list = document.getElementById('alList');
+  maxRenderedId = LOGS.length ? Math.max(...LOGS.map(e => e.id)) : 0;
+  pendingCount = 0;
+  document.getElementById('newBtn').classList.remove('show');
+  if (!items.length) {
+    list.innerHTML = '<div class="al-empty">Hozircha so\'rovlar yo\'q. Bot yoki WebApp 1C\'ga murojaat qilganda shu yerda ko\'rinadi.</div>';
+    return;
+  }
+  list.innerHTML = items.map(itemHTML).join('');
+}
+
+function applyIncremental() {
+  // Jonli rejim: mavjud DOM saqlanadi — faqat o'zgargan yozuvlar joyida
+  // yangilanadi, yangilari esa tugma orqali (yoki eng tepada tursangiz avtomatik) qo'shiladi.
+  for (const e of LOGS) {
+    if (e.id > maxRenderedId) continue;
+    const el = document.getElementById('it' + e.id);
+    if (el && el.dataset.sig !== sig(e)) {
+      if (el.classList.contains('open')) {
+        el.dataset.sig = sig(e);
+        el.querySelector('.al-row').outerHTML = rowHTML(e);
+        el.querySelector('.al-detail').outerHTML = detailHTML(e);
+      } else {
+        el.outerHTML = itemHTML(e);
+      }
+    }
+  }
+  const fresh = LOGS.filter(e => e.id > maxRenderedId && matchesFilter(e));
+  pendingCount = fresh.length;
+  if (!pendingCount) return;
+  if (window.scrollY <= 10 && !document.querySelector('.al-item.open')) {
+    showPending();  // tepada turibsiz, hech narsa ochiq emas — bemalol qo'shamiz
+  } else {
+    const b = document.getElementById('newBtn');
+    b.textContent = `⬆ ${pendingCount} ta yangi so'rov — ko'rsatish`;
+    b.classList.add('show');
+  }
+}
+
+function showPending() {
+  const list = document.getElementById('alList');
+  const fresh = LOGS.filter(e => e.id > maxRenderedId).sort((a, b) => b.id - a.id);
+  const empty = list.querySelector('.al-empty');
+  if (empty && fresh.some(matchesFilter)) empty.remove();
+  for (const e of fresh.filter(matchesFilter).reverse()) list.insertAdjacentHTML('afterbegin', itemHTML(e));
+  if (fresh.length) maxRenderedId = Math.max(maxRenderedId, ...fresh.map(e => e.id));
+  pendingCount = 0;
+  document.getElementById('newBtn').classList.remove('show');
+}
+
+function renderResponse(e, sc, respB) {
+  const expected = pretty(e.expected);
+  if (e.outcome !== 'ok' && expected) {
+    // side-by-side: what the docs expect vs what 1C actually returned
+    return `
+      ${e.error ? `<div class="lbl">Farq</div><div class="al-mismatch ${e.outcome==='unavailable'?'soon':''}">${esc(e.error)}</div>` : ''}
+      <div class="lbl">Taqqoslash</div>
+      <div class="al-diff">
+        <div class="col exp"><div class="col-h">✓ Kutilgan shakl (hujjat bo'yicha)</div><pre class="al-pre">${esc(expected)}</pre></div>
+        <div class="col got"><div class="col-h">✗ Kelgan javob — HTTP ${sc}</div><pre class="al-pre">${respB ? esc(respB) : "(bo'sh tana — hech narsa qaytmadi)"}</pre></div>
+      </div>`;
+  }
+  return `
+    <div class="lbl">Javob (response) — HTTP ${sc}</div><pre class="al-pre">${respB ? esc(respB) : "(bo'sh tana — hech narsa qaytmadi)"}</pre>
+    ${e.error ? `<div class="lbl">Izoh</div><pre class="al-pre">${esc(e.error)}</pre>` : ''}`;
+}
+
+function toggleItem(id) {
+  openIds.has(id) ? openIds.delete(id) : openIds.add(id);
+  document.getElementById('it' + id)?.classList.toggle('open');
+}
+function toggleLive() {
+  live = !live;
+  const b = document.getElementById('liveBtn');
+  b.classList.toggle('on', live);
+  b.textContent = live ? '● Jonli' : '○ Jonli';
+  schedule();
+}
+function schedule() {
+  clearInterval(timer);
+  if (live) timer = setInterval(refresh, 4000);
+}
+async function clearLogs() {
+  if (!confirm("Barcha loglar o'chirilsinmi?")) return;
+  await fetch('/panel/api-logs/clear', { method: 'POST' });
+  openIds.clear();
+  refresh();
+}
+let didAutoOpen = false;
+async function firstLoad() {
+  await refresh();
+  // ?open=last-fail — eng so'nggi muvaffaqiyatsiz so'rovni ochib ko'rsatish
+  if (!didAutoOpen && new URLSearchParams(location.search).get('open') === 'last-fail') {
+    didAutoOpen = true;
+    const bad = LOGS.find(e => e.outcome !== 'ok');
+    if (bad) { openIds.add(bad.id); renderList(); document.getElementById('it' + bad.id)?.scrollIntoView({ block: 'start' }); }
+  }
+}
+firstLoad(); schedule();
+</script>
+{% endblock %}

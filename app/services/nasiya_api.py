@@ -13,17 +13,96 @@ No mock data lives here anymore.
 """
 import base64
 import logging
+import time
 from datetime import date, datetime, timezone
 from typing import Any, Optional
 
 import httpx
 
+from app.services import api_log
 from app.services.http_client import get_http_client
 
 logger = logging.getLogger(__name__)
 
 API_PREFIX = "/hs/client_bot/api/"
 TIMEOUT = 30.0
+
+# Expected response skeletons per endpoint (docs/1C_NASIYA_API.md) — shown in
+# /panel/api-logs next to the actual answer so the 1C team sees the difference.
+EXPECTED_SHAPES: dict[str, Any] = {
+    "getClientInfo": {
+        "client_id": 9454, "name": "XAYDAROV D.", "phone": "998995340313",
+        "status": "Фаол мижоз", "registered_at": "2025-03-14",
+        "active_contracts": 2, "total_contracts": 3,
+        "total_nasiya": 15520000, "total_paid": 8300000, "remaining_debt": 7220000,
+        "overdue_amount": 644000, "overdue_count": 1,
+        "next_payment": {"date": "2026-08-20", "amount": 644000, "contract_id": 5012, "contract_number": "NS-2026-00123"},
+        "reminders_enabled": True,
+    },
+    "getContracts": [{
+        "contract_id": 5012, "contract_number": "NS-2026-00123", "date": "2026-06-18",
+        "branch": "Марказий филиал", "status": "active", "products_short": "…",
+        "goods_total": 6450000, "total": 7417000, "initial_payment": 1483000,
+        "months": 6, "monthly_payment": 989000, "paid": 2967000, "paid_count": 3,
+        "remaining_debt": 2967000, "overdue_amount": 0, "overdue_count": 0,
+        "next_payment_date": "2026-09-16", "next_payment_amount": 989000, "end_date": "2026-12-15",
+    }],
+    "getContract": {
+        "contract_id": 5012, "contract_number": "NS-2026-00123", "…": "getContracts[0] dagi barcha maydonlar",
+        "products": [{"product_id": 771, "name": "…", "qty": 1, "price": 4800000, "sum": 4800000}],
+        "schedule": [{"n": 1, "date": "2026-07-18", "amount": 989000, "status": "paid", "paid_date": "2026-07-16", "paid_amount": 989000}],
+    },
+    "getSchedule": [{
+        "contract_id": 5012, "contract_number": "NS-2026-00123", "n": 2,
+        "date": "2026-08-17", "amount": 989000, "status": "overdue", "paid_date": None, "paid_amount": 0,
+    }],
+    "getPayments": [{
+        "payment_id": 90011, "date": "2026-08-17", "amount": 300000,
+        "contract_id": 5012, "contract_number": "NS-2026-00123", "method": "click",
+        "receipt_no": "KV-260817-2058", "note": "…", "transaction_id": "clk_8f3a91",
+    }],
+    "createPayment": {
+        "payment_id": 90011, "status": "pending", "amount": 300000,
+        "contract_number": "NS-2026-00123", "remaining_after": 2667000, "expires_at": "2026-08-17T15:30:00",
+    },
+    "confirmPayment": {
+        "success": True, "payment_id": 90011, "receipt_no": "KV-260817-2058", "date": "2026-08-17",
+        "amount": 300000, "method": "click", "contract_id": 5012, "contract_number": "NS-2026-00123",
+        "remaining_debt": 2667000, "next_payment_date": "2026-09-16", "next_payment_amount": 689000, "closed": False,
+    },
+    "cancelPayment": {"success": True, "payment_id": 90011, "status": "cancelled"},
+    "getPurchases": [{
+        "purchase_id": 3301, "date": "2026-06-18", "contract_id": 5012, "contract_number": "NS-2026-00123",
+        "branch": "Марказий филиал", "total": 6450000,
+        "products": [{"product_id": 771, "name": "…", "qty": 1, "price": 4800000, "sum": 4800000}],
+    }],
+    "getCompanyInfo": {
+        "name": "MX Nasiya", "phone": "+998 71 200 00 00", "operator_phone": "+998 90 000 00 00",
+        "operator_username": "@mxnasiya_support", "email": "info@mxsoft.uz", "address": "…",
+        "working_hours": "…",
+        "branches": [{"branch_id": 1, "name": "…", "address": "…", "phone": "…", "hours": "…", "lat": None, "lon": None}],
+    },
+    "createRequest": {"request_id": 1001, "status": "new", "created_at": "2026-08-17T14:10:00"},
+    "setReminders": {"success": True, "enabled": False},
+    "getPromotions": [{
+        "id": 1, "type": "promo", "title": "…", "text": "…",
+        "valid_until": "2026-08-31", "image_url": None, "url": None,
+    }],
+}
+
+
+def _shape_of(data: Any) -> str:
+    """Short human description of what actually arrived."""
+    if data is None:
+        return "hech narsa (bo'sh)"
+    if isinstance(data, list):
+        if not data:
+            return "bo'sh ro'yxat []"
+        inner = ", ".join(sorted(data[0].keys())[:12]) if isinstance(data[0], dict) else type(data[0]).__name__
+        return f"ro'yxat [{len(data)} ta element], birinchi element kalitlari: {inner}"
+    if isinstance(data, dict):
+        return "obyekt, kalitlari: " + (", ".join(sorted(data.keys())[:15]) or "(bo'sh)")
+    return f"{type(data).__name__}: {str(data)[:80]}"
 
 
 class ServiceUnavailable(Exception):
@@ -119,7 +198,36 @@ async def _request(
     method: str, base_url: str, login: str, password: str, endpoint: str,
     params: Optional[dict] = None, body: Optional[dict] = None,
 ) -> Any:
-    """Perform request; return parsed JSON. Raises ServiceUnavailable / NasiyaError."""
+    """Perform request; return parsed JSON. Raises ServiceUnavailable / NasiyaError.
+
+    GET so'rovlarda vaqtinchalik xatolar (tarmoq, 5xx, bo'sh tana) bir marta
+    qayta uriniladi — 1C bir lahza "yo'talsa" foydalanuvchi
+    "тез кунда ишга тушади" ko'rmasin. POST lar takrorlanmaydi (idempotent emas).
+    Every call (success or failure) is recorded to ``api_log``.
+    """
+    attempts = 2 if method == "GET" else 1
+    last_exc: Optional[Exception] = None
+    for attempt in range(attempts):
+        if attempt:
+            import asyncio
+            await asyncio.sleep(0.7)
+        try:
+            return await _request_once(method, base_url, login, password, endpoint, params, body)
+        except ServiceUnavailable as e:
+            # doim bo'sh tana ("endpoint yozilmagan") holatida qayta urinish ma'nosiz
+            last_exc = e
+            if e.reason == "empty body" and attempt == 0:
+                continue
+            if e.reason.startswith(("network", "http 5")) and attempt == 0:
+                continue
+            raise
+    raise last_exc  # type: ignore[misc]
+
+
+async def _request_once(
+    method: str, base_url: str, login: str, password: str, endpoint: str,
+    params: Optional[dict] = None, body: Optional[dict] = None,
+) -> Any:
     if not base_url:
         raise ServiceUnavailable(endpoint, "base_url is empty (bot settings)")
     url = f"{base_url.rstrip('/')}{API_PREFIX}{endpoint}"
@@ -128,28 +236,51 @@ async def _request(
     if body is not None:
         headers["Content-Type"] = "application/json"
     logger.info("📡 1C %s %s params=%s body=%s", method, url, params, body)
+    started = time.monotonic()
+
+    def _log(status=None, response=None, outcome="ok", error=""):
+        api_log.record(
+            endpoint=endpoint, method=method, url=url, params=params, request_body=body,
+            status_code=status, response_body=response, outcome=outcome, error=error,
+            duration_ms=(time.monotonic() - started) * 1000,
+            expected=EXPECTED_SHAPES.get(endpoint) if outcome != "ok" else None,
+        )
+
     try:
         resp = await get_http_client().request(method, url, params=params, json=body, headers=headers, timeout=TIMEOUT)
     except httpx.HTTPError as e:
         logger.error("❌ 1C %s network error: %s", endpoint, e)
+        _log(outcome="unavailable", error=f"network: {e}")
         raise ServiceUnavailable(endpoint, f"network: {e}")
     text = resp.text or ""
     logger.info("📡 1C %s RESPONSE %s: %s", endpoint, resp.status_code, text[:400])
 
     if resp.status_code == 401:
+        _log(resp.status_code, text, "error", "UNAUTHORIZED")
         raise NasiyaError("UNAUTHORIZED", "1C логин/парол нотўғри (панелдан текширинг)", endpoint)
     if resp.status_code in (404, 405, 501) or resp.status_code >= 500:
+        _log(resp.status_code, text, "unavailable", f"http {resp.status_code}")
         raise ServiceUnavailable(endpoint, f"http {resp.status_code}")
     if not text.strip():
         # 1C answers 200 with an empty body for handlers that are not implemented yet
+        _log(resp.status_code, "", "unavailable",
+             "bo'sh tana keldi — hujjatdagi JSON kutilgan edi (endpoint hali yozilmagan bo'lsa kerak)")
         raise ServiceUnavailable(endpoint, "empty body")
     try:
         data = resp.json()
     except ValueError:
+        _log(resp.status_code, text, "unavailable",
+             f"JSON emas — kelgani: {text.strip()[:60]!r}…; hujjatdagi JSON kutilgan edi")
         raise ServiceUnavailable(endpoint, "non-JSON body")
-    _raise_if_error(endpoint, data)
+    try:
+        _raise_if_error(endpoint, data)
+    except NasiyaError as e:
+        _log(resp.status_code, data, "error", f"{e.code}: {e.message}")
+        raise
     if resp.status_code >= 400:
+        _log(resp.status_code, data, "error", f"http {resp.status_code}")
         raise NasiyaError(f"HTTP_{resp.status_code}", str(data)[:200], endpoint)
+    _log(resp.status_code, data, "ok")
     return data
 
 
@@ -170,13 +301,33 @@ def _expect_list(endpoint: str, data: Any) -> list:
         for key in ("items", "data", "list", "rows", endpoint):
             if isinstance(data.get(key), list):
                 return data[key]
+    api_log.amend_last(
+        endpoint, "unavailable",
+        f"javob shakli noto'g'ri — kutilgan: JSON ro'yxat [ {{…}} ]; kelgan: {_shape_of(data)}",
+        expected=EXPECTED_SHAPES.get(endpoint),
+    )
     raise ServiceUnavailable(endpoint, "unexpected shape (not a list)")
 
 
 def _expect_dict(endpoint: str, data: Any, must_have: tuple = ()) -> dict:
+    # 1C tolerance: a single object sometimes arrives wrapped in a one-element
+    # list ([ {...} ]) — unwrap it instead of rejecting (docs say bare object).
+    if isinstance(data, list) and len(data) == 1 and isinstance(data[0], dict):
+        data = data[0]
     if not isinstance(data, dict):
+        api_log.amend_last(
+            endpoint, "unavailable",
+            f"javob shakli noto'g'ri — kutilgan: JSON obyekt {{…}}; kelgan: {_shape_of(data)}",
+            expected=EXPECTED_SHAPES.get(endpoint),
+        )
         raise ServiceUnavailable(endpoint, "unexpected shape (not an object)")
     if must_have and not any(k in data for k in must_have):
+        api_log.amend_last(
+            endpoint, "unavailable",
+            f"kutilgan kalitlardan birortasi ham yo'q: {', '.join(must_have)}; kelgan kalitlar: "
+            + (", ".join(sorted(data.keys())[:15]) or "(bo'sh obyekt)"),
+            expected=EXPECTED_SHAPES.get(endpoint),
+        )
         raise ServiceUnavailable(endpoint, f"unexpected shape (missing {must_have})")
     return data
 
@@ -376,6 +527,8 @@ class NasiyaService:
             if e.code == "CONTRACT_NOT_FOUND":
                 return None
             raise
+        if isinstance(data, list) and not data:
+            return None  # 1C sometimes answers [] instead of CONTRACT_NOT_FOUND
         d = _expect_dict("getContract", data, ("contract_id", "contract_number", "number"))
         c = _map_contract(d)
         c.setdefault("schedule", [])

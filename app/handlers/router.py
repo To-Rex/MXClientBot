@@ -202,20 +202,30 @@ def create_router(
             )
             await session.commit()
 
+    RELOGIN_TEXT = (
+        "🔄 Сессиянгизни янгилаш керак.\n\n"
+        "Давом этиш учун қуйидаги тугма орқали телефон рақамингизни "
+        "бир марта қайта юборинг — шундан сўнг ҳаммаси жойига тушади."
+    )
+
     async def _require_client(message: Message) -> Optional[str]:
-        """Return client_id or send the 'register first' hint."""
+        """Return client_id or offer a one-tap re-login (phone button)."""
         user = await _get_user(session_factory, message.from_user.id, bot_id)
         if not user or not user.client_id:
-            await message.answer(
-                "❌ Аввал рўйхатдан ўтишингиз керак. Илтимос, /start буйруғини босинг."
-            )
+            logger.warning("session missing: tg=%s bot=%s (msg)", message.from_user.id, bot_id)
+            await message.answer(RELOGIN_TEXT, reply_markup=phone_keyboard())
             return None
         return user.client_id
 
     async def _client_from_callback(callback: CallbackQuery) -> Optional[str]:
         user = await _get_user(session_factory, callback.from_user.id, bot_id)
         if not user or not user.client_id:
-            await callback.answer("❌ Аввал рўйхатдан ўтинг: /start", show_alert=True)
+            logger.warning("session missing: tg=%s bot=%s (callback %s)", callback.from_user.id, bot_id, callback.data)
+            await callback.answer("Сессияни янгилаш керак — пастдаги тугма орқали рақамингизни қайта юборинг", show_alert=True)
+            try:
+                await callback.message.answer(RELOGIN_TEXT, reply_markup=phone_keyboard())
+            except Exception:
+                pass
             return None
         return user.client_id
 
@@ -227,6 +237,13 @@ def create_router(
         await state.clear()
         user = await _get_user(session_factory, message.from_user.id, bot_id)
         company = bot_config["company_name"]
+
+        if not user or not user.client_id:
+            # diagnostika: qaysi holatda ro'yxat so'ralayotganini logdan ko'rish mumkin
+            logger.warning(
+                "start: ro'yxat so'raldi tg=%s bot=%s (db yozuvi: %s)",
+                message.from_user.id, bot_id, "yo'q" if not user else "client_id bo'sh",
+            )
 
         if user and user.client_id:
             await message.answer(
@@ -273,22 +290,47 @@ def create_router(
             disable_web_page_preview=True,
         )
 
-    async def _do_logout(message: Message, state: FSMContext):
+    async def _ask_logout_confirm(message: Message, state: FSMContext):
+        """Tasodifan bosishdan himoya: chiqishdan oldin tasdiq so'raymiz."""
         await state.clear()
-        await _logout_user(message.from_user.id)
         await message.answer(
-            "Сиз тизимдан чиқдингиз.\n\n"
-            "Қайтадан кириш учун телефон рақамингизни юборинг.",
-            reply_markup=phone_keyboard(),
+            "🚪 Ростдан ҳам тизимдан чиқасизми?\n\n"
+            "Чиқсангиз, қайта кириш учун телефон рақамингизни яна юборишингиз керак бўлади.",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
+                InlineKeyboardButton(text="✅ Ҳа, чиқаман", callback_data="logout_yes"),
+                InlineKeyboardButton(text="❌ Бекор қилиш", callback_data="logout_no"),
+            ]]),
         )
 
     @router.message(Command("logout"))
     async def logout_command_handler(message: Message, state: FSMContext):
-        await _do_logout(message, state)
+        await _ask_logout_confirm(message, state)
 
     @router.message(F.text == BTN_LOGOUT)
     async def logout_button_handler(message: Message, state: FSMContext):
-        await _do_logout(message, state)
+        await _ask_logout_confirm(message, state)
+
+    @router.callback_query(F.data == "logout_yes")
+    async def logout_yes_callback(callback: CallbackQuery, state: FSMContext):
+        await state.clear()
+        await _logout_user(callback.from_user.id)
+        await callback.answer()
+        try:
+            await callback.message.edit_text("Сиз тизимдан чиқдингиз.")
+        except Exception:
+            pass
+        await callback.message.answer(
+            "Қайтадан кириш учун телефон рақамингизни юборинг.",
+            reply_markup=phone_keyboard(),
+        )
+
+    @router.callback_query(F.data == "logout_no")
+    async def logout_no_callback(callback: CallbackQuery):
+        await callback.answer("Бекор қилинди")
+        try:
+            await callback.message.edit_text("✅ Тизимда қолдингиз.")
+        except Exception:
+            pass
 
     @router.message(F.contact)
     async def contact_handler(message: Message, state: FSMContext):

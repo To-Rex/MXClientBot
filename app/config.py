@@ -26,6 +26,14 @@ def _load_dotenv():
 _load_dotenv()
 
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///app.db")
+
+# SQLite nisbiy yo'l ishga tushirilgan katalogga bog'liq bo'lib qolmasin:
+# server boshqa cwd'dan ishga tushsa yangi bo'sh baza ochilib, foydalanuvchilar
+# "ro'yxatdan o'tmagan" bo'lib qolardi. Nisbiy yo'lni loyiha ildiziga mahkamlaymiz.
+_SQLITE_PREFIX = "sqlite+aiosqlite:///"
+if DATABASE_URL.startswith(_SQLITE_PREFIX) and not DATABASE_URL.startswith(_SQLITE_PREFIX + "/"):
+    _db_rel = DATABASE_URL[len(_SQLITE_PREFIX):]
+    DATABASE_URL = _SQLITE_PREFIX + str((Path(__file__).resolve().parent.parent / _db_rel))
 HOST = os.getenv("HOST", "0.0.0.0")
 PORT = int(os.getenv("PORT", "8000"))
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")

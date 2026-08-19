@@ -4,6 +4,7 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 
 from app.database import async_session
+from app.services import api_log
 from app.models import Bot, User
 from app.services.auth_api import AuthAPIService
 
@@ -253,3 +254,24 @@ async def profile_page(request: Request):
     token = request.session.get("access_token", "")
     profile = await AuthAPIService.get_profile(token) if token else None
     return _render(request, "profile.html", {"profile": profile or {}})
+
+
+# ── 1C API logs (debug view) ───────────────────────────────────────────────
+@router.get("/api-logs", response_class=HTMLResponse)
+async def api_logs_page(request: Request):
+    return _render(request, "api_logs.html", {"max_entries": api_log.MAX_ENTRIES})
+
+
+@router.get("/api-logs/data")
+async def api_logs_data():
+    return {
+        "entries": api_log.entries(),
+        "endpoints": api_log.known_endpoints(),
+        "stats": api_log.stats(),
+    }
+
+
+@router.post("/api-logs/clear")
+async def api_logs_clear():
+    api_log.clear()
+    return {"success": True}

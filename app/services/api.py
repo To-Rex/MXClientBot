@@ -5,6 +5,8 @@ from typing import Optional
 
 import httpx
 
+from app.services import api_log
+
 from app.config import PRODUCTS_CACHE_TTL
 from app.services.http_client import get_http_client
 
@@ -70,6 +72,8 @@ class APIService:
                 "   Body: %s",
                 url, credentials, login, "*" * len(password) if password else "<empty>", payload,
             )
+            started = time.monotonic()
+            endpoint_name = "checkNumber" if "checkNumber" in url else "device (legacy)"
             try:
                 response = await client.post(url, json=payload, headers=headers)
                 logger.info(
@@ -82,7 +86,11 @@ class APIService:
                     response.text[:2000],
                 )
                 response.raise_for_status()
-                return response.json()
+                data = response.json()
+                api_log.record(endpoint=endpoint_name, method="POST", url=url, request_body=payload,
+                               status_code=response.status_code, response_body=data, outcome="ok",
+                               duration_ms=(time.monotonic() - started) * 1000)
+                return data
             except httpx.HTTPStatusError as e:
                 logger.error(
                     "❌ register_device FAILED\n"
@@ -91,6 +99,11 @@ class APIService:
                     "   Response: %s",
                     url, e.response.status_code, e.response.text[:1000],
                 )
+                api_log.record(endpoint=endpoint_name, method="POST", url=url, request_body=payload,
+                               status_code=e.response.status_code, response_body=e.response.text[:1000],
+                               outcome="error", error=f"http {e.response.status_code}",
+                               duration_ms=(time.monotonic() - started) * 1000,
+                               expected={"id": 9454, "name": "XAYDAROV DILSHODJON"})
                 # New endpoint absent on this 1C base → try legacy endpoint once
                 if e.response.status_code == 404 and idx + 1 < len(attempts):
                     logger.warning("register_device: checkNumber not found, falling back to legacy /device")
@@ -99,6 +112,10 @@ class APIService:
                 except Exception: return None
             except Exception as e:
                 logger.error("❌ register_device EXCEPTION for %s: %s", url, e)
+                api_log.record(endpoint=endpoint_name, method="POST", url=url, request_body=payload,
+                               outcome="unavailable", error=str(e)[:300],
+                               duration_ms=(time.monotonic() - started) * 1000,
+                               expected={"id": 9454, "name": "XAYDAROV DILSHODJON"})
                 return None
         return None
 
