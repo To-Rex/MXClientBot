@@ -14,6 +14,7 @@ from app.services.bot_manager import BotManager
 from app.services.http_client import close_http_client
 from app.services.nasiya_api import NasiyaError, ServiceUnavailable
 from app.web.auth import AuthMiddleware, router as auth_router
+from app.web.events_api import router as events_router
 from app.web.routes import router as web_router
 from app.web.web_app_api import router as webapp_api_router
 
@@ -73,6 +74,7 @@ async def _nasiya_error_handler(request: Request, exc: NasiyaError):
 
 
 app.include_router(auth_router)
+app.include_router(events_router)
 app.include_router(web_router)
 app.include_router(webapp_api_router)
 

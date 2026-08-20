@@ -661,13 +661,12 @@ POST /hs/client_bot/api/setReminders
 
 Javob 200: `{ "success": true, "enabled": false }` — holat keyin `getClientInfo.reminders_enabled` da qaytadi.
 
-### 8.2 1C → bot voqealari (ixtiyoriy, kelishiladi)
+### 8.2 1C → bot voqealari ✅ tayyor (bot tomonida)
 
-«Янги шартнома расмийлаштирилди» va «тўлов қабул қилинди (дўконда/нақд)» xabarlari uchun 1C bot serveriga push yuboradi. Bot tomonidagi endpoint **keyingi bosqichda** yaratiladi:
+«Янги шартнома расмийлаштирилди» va «тўлов қабул қилинди (дўконда/нақд)» xabarlari uchun 1C bot serveriga push yuboradi. Bot tomonida **tayyor**: `POST {BOT_SERVER}/api/1c/events` — autentifikatsiyasiz (sarlavha shart emas). Muvaffaqiyatli javob: `{"success": true, "delivered": true}` (`delivered: false` — mijoz botni bloklagan). Xato: `401 UNAUTHORIZED`, `400 VALIDATION_ERROR`, `404 CHAT_NOT_FOUND`.
 
 ```http
 POST {BOT_SERVER}/api/1c/events
-Authorization: Basic ...   (bot tomonidan beriladi)
 {
   "event": "contract_created",
   "client_id": 9454,
