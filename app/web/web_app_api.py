@@ -119,6 +119,7 @@ async def register_device(req: RegisterRequest, auth: dict = Depends(authenticat
     cfg = auth["bot_config"]
     result = await api_service.register_device(
         cfg["base_url"], cfg["one_c_login"], cfg["one_c_password"], phone, str(auth["telegram_id"]),
+        bot_id=auth["bot_id"],
     )
 
     if not result or not result.get("id"):

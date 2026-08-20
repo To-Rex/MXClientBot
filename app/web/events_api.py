@@ -36,6 +36,7 @@ def _error(status: int, code: str, message: str) -> JSONResponse:
 class EventIn(BaseModel):
     event: str
     chat_id: str
+    bot_id: Optional[int] = None       # checkNumber'da yuborilgan botID — aniq bot tanlash uchun
     client_id: Optional[int] = None
     contract_id: Optional[int] = None
     contract_number: Optional[str] = None
@@ -91,26 +92,33 @@ async def receive_event(request: Request, payload: EventIn):
         _log(400, resp, "error", "VALIDATION_ERROR")
         return JSONResponse(status_code=400, content=resp)
 
-    # Qaysi botdan yuborishni aniqlaymiz: shu chat_id ro'yxatdan o'tgan bot
+    # Qaysi botdan yuborish: 1C bot_id yuborgan bo'lsa — aynan o'sha bot.
     bm = request.app.state.bot_manager
-    async with async_session() as session:
-        result = await session.execute(select(User).where(User.telegram_id == chat_id))
-        users = list(result.scalars().all())
-    if payload.client_id is not None and len(users) > 1:
-        matched = [u for u in users if u.client_id == str(payload.client_id)]
-        users = matched or users
     instance = None
-    for u in users:
-        instance = bm.get_instance(u.bot_id)
-        if instance:
-            break
-    if instance is None and bm.running_count == 1:
-        # bitta bot ishlayapti — undan yuboramiz (user yozuvi shart emas)
-        instance = next(iter(bm._instances.values()))
-    if instance is None:
-        resp = {"error": {"code": "CHAT_NOT_FOUND", "message": "Bu chat_id uchun ishlayotgan bot topilmadi"}}
-        _log(404, resp, "error", "CHAT_NOT_FOUND")
-        return JSONResponse(status_code=404, content=resp)
+    if payload.bot_id is not None:
+        instance = bm.get_instance(int(payload.bot_id))
+        if instance is None:
+            resp = {"error": {"code": "BOT_NOT_FOUND", "message": f"bot_id={payload.bot_id} ishlamayapti yoki mavjud emas"}}
+            _log(404, resp, "error", "BOT_NOT_FOUND")
+            return JSONResponse(status_code=404, content=resp)
+    else:
+        # eski usul (bot_id yuborilmagan): chat_id ro'yxatdan o'tgan botni topamiz
+        async with async_session() as session:
+            result = await session.execute(select(User).where(User.telegram_id == chat_id))
+            users = list(result.scalars().all())
+        if payload.client_id is not None and len(users) > 1:
+            matched = [u for u in users if u.client_id == str(payload.client_id)]
+            users = matched or users
+        for u in users:
+            instance = bm.get_instance(u.bot_id)
+            if instance:
+                break
+        if instance is None and bm.running_count == 1:
+            instance = next(iter(bm._instances.values()))
+        if instance is None:
+            resp = {"error": {"code": "CHAT_NOT_FOUND", "message": "Bu chat_id uchun ishlayotgan bot topilmadi"}}
+            _log(404, resp, "error", "CHAT_NOT_FOUND")
+            return JSONResponse(status_code=404, content=resp)
 
     text = _compose(payload)
     delivered = True

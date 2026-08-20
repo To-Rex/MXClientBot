@@ -35,13 +35,16 @@ def _basic_auth(login: str, password: str) -> str:
 class APIService:
     @staticmethod
     async def register_device(
-        base_url: str, login: str, password: str, phone_number: str, chat_id: str
+        base_url: str, login: str, password: str, phone_number: str, chat_id: str,
+        bot_id: int = 0,
     ) -> Optional[dict]:
         """Check/register a client by phone number.
 
         Primary endpoint: POST /hs/client_bot/api/checkNumber
-            body:     {"phoneNumber": <int>, "chatID": "<str>"}
+            body:     {"phoneNumber": <int>, "chatID": "<str>", "botID": <int>}
             response: {"id": <int>, "name": "<str>"}
+        ``botID`` — panel'dagi bot raqami; 1C uni mijoz kartochkasiga saqlab,
+        keyin /api/1c/events push'larida qaytaradi (bot aniq tanlanishi uchun).
 
         Legacy fallback (only if the new endpoint is missing → 404):
             POST /hs/client/api/device  {"phone_number": <int>, "chat_id": "<str>"}
@@ -59,7 +62,7 @@ class APIService:
             phone_int = phone_number
 
         attempts = [
-            (f"{root}/hs/client_bot/api/checkNumber", {"phoneNumber": phone_int, "chatID": str(chat_id)}),
+            (f"{root}/hs/client_bot/api/checkNumber", {"phoneNumber": phone_int, "chatID": str(chat_id), "botID": int(bot_id)}),
             (f"{root}/hs/client/api/device", {"phone_number": phone_int, "chat_id": chat_id}),
         ]
 

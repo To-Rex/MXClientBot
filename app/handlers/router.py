@@ -345,7 +345,7 @@ def create_router(
             bot_id, message.from_user.id, phone,
         )
 
-        result = await api_service.register_device(*creds, phone, str(message.chat.id))
+        result = await api_service.register_device(*creds, phone, str(message.chat.id), bot_id=bot_id)
 
         logger.info(
             "🤖 Bot[%s] register_device result: %s",

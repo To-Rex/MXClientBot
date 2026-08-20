@@ -1,12 +1,30 @@
 # MX Nasiya — 1C HTTP-servis API spetsifikatsiyasi
 
-Telegram bot va WebApp (mijozning nasiya bo'yicha shaxsiy kabineti) uchun 1C:Enterprise tomonida yaratilishi kerak bo'lgan HTTP-servis.
+Telegram bot va WebApp (mijozning nasiya bo'yicha shaxsiy kabineti) uchun 1C:Enterprise tomonidagi HTTP-servis spetsifikatsiyasi. Katta qismi ishga tushgan — quyidagi «Joriy holat» jadvaliga qarang.
 
 Bot va WebApp **barcha** endpointlarga ulangan (`app/services/nasiya_api.py`). 1C da hali tayyor bo'lmagan endpoint (404/5xx, bo'sh yoki noto'g'ri shakldagi javob) uchun foydalanuvchiga «Бу хизмат тез кунда ишга тушади» ko'rsatiladi; endpoint tayyor bo'lgach hech qanday o'zgarishsiz ishlay boshlaydi.
 
-Bugungi kunda tayyor va botga ulangan: **`checkNumber`** (1-bo'lim), **`getClientInfo`** (2-bo'lim). Qolganlari — yaratilishi kerak.
+### Joriy holat (2026-08-20 tekshiruvi)
 
-> **Muhim:** 1C hozir mavjud bo'lmagan GET manzillarga ham `200` + bo'sh tana (yoki `getContracts` uchun `getClientInfo` javobi) qaytaryapti. Bot buni «tayyor emas» deb hisoblaydi (javob shakli tekshiriladi). Endpoint tayyor bo'lganda javob aynan shu hujjatdagi shaklda bo'lishi shart.
+| Holat | Endpointlar |
+|---|---|
+| ✅ Tayyor, ishlayapti | `checkNumber`, `getClientInfo`, `getContracts`, `getContract`*, `getSchedule`, `getPayments`, `getPurchases`, `getCompanyInfo`, `getPromotions`, `createPayment`, `createRequest`, `setReminders` |
+| ⏳ Tayyor emas (500) | `confirmPayment`, `cancelPayment` — **to'lov oqimi shularsiz yakunlanmaydi**, birinchi navbatda kerak |
+| ✅ Bot tomonida tayyor | `POST {BOT_SERVER}/api/1c/events` (8.2-bo'lim) |
+
+\* `getContract` hozir javobni `[ {…} ]` ga o'rab qaytaryapti — hujjat bo'yicha yakka obyekt `{…}` bo'lishi kerak. Bot vaqtincha buni kechiradi (bir elementli ro'yxatni o'zi ochadi), lekin to'g'rilash so'raladi.
+
+### 0.0 Bot tolerantligi (bilish foydali, lekin suyanmaslik kerak)
+
+Bot quyidagi chetlanishlarni o'zi to'g'irlab o'qiydi — ular xato hisoblanmaydi, ammo **shartnoma — shu hujjatdagi shakl**:
+
+- yakka obyekt `[ {…} ]` ga o'ralgan bo'lsa — ochib oladi;
+- sana `YYYY-MM-DDTHH:MM:SS` yoki `DD.MM.YYYY` ko'rinishida kelsa — qabul qiladi;
+- `null` o'rniga bo'sh matn `""` kelsa (`paid_date`, `status`…) — `null` deb qabul qiladi; bo'sh shartnoma/grafik `status` ni qarz va muddatdan o'zi hisoblaydi;
+- ortiqcha maydonlar (masalan `products[].n`) — e'tiborsiz qoldiriladi;
+- GET so'rovlarda vaqtinchalik xato (tarmoq, 5xx, bo'sh tana) bo'lsa — 0.7 s dan keyin bir marta qayta urinadi. POST'lar takrorlanmaydi.
+
+Endpoint umuman yozilmagan bo'lsa (`200` + bo'sh tana, 404/5xx, boshqa shakldagi JSON) bot uni «tayyor emas» deb topadi va foydalanuvchiga «Бу хизмат тез кунда ишга тушади» ko'rsatadi. Barcha so'rov/javoblar admin paneldagi **/panel/api-logs** sahifasida (kutilgan ↔ kelgan taqqoslash bilan) ko'rinadi.
 
 ---
 
@@ -91,13 +109,14 @@ POST /hs/client_bot/api/checkNumber
 Authorization: Basic Ym90X2FwaToxMjM=
 Content-Type: application/json
 
-{ "phoneNumber": 998995340313, "chatID": "66540046" }
+{ "phoneNumber": 998995340313, "chatID": "66540046", "botID": 1 }
 ```
 
 | Kalit | Tip | Majburiy | Izoh |
 |---|---|---|---|
 | `phoneNumber` | number | ha | `+`, bo'shliq va chiziqchasiz, `998` bilan boshlanadi |
 | `chatID` | string | ha | Telegram chat/user id — 1C mijoz kartochkasiga yozib qo'yadi (keyin xabar yuborish uchun) |
+| `botID` | number | ha | Bot raqami (admin paneldagi ID). 1C uni `chatID` bilan birga saqlaydi va `/api/1c/events` push'larida qaytaradi — xabar aynan shu botdan yuborilishi uchun |
 
 ### Javob 200
 ```json
@@ -174,7 +193,7 @@ GET /hs/client_bot/api/getClientInfo?client_id=9454
 
 ---
 
-## 3. Shartnomalar
+## 3. Shartnomalar ✅ tayyor (getContract — obyekt bo'lishi kerak, hozir ro'yxatga o'ralgan)
 
 ### 3.1 Ro'yxat — `GET getContracts`
 
@@ -296,7 +315,7 @@ GET /hs/client_bot/api/getContract?client_id=9454&contract_id=5012
 
 ---
 
-## 4. To'lov grafigi — `GET getSchedule`
+## 4. To'lov grafigi — `GET getSchedule` ✅ tayyor
 
 «📅 Графигим» — barcha shartnomalar yoki bittasi bo'yicha, statuslar bo'yicha filtr bilan. Bot eslatmalarni ham shu ma'lumotdan hisoblaydi.
 
@@ -336,7 +355,7 @@ GET /hs/client_bot/api/getSchedule?client_id=9454&contract_id=5012&status=overdu
 
 ## 5. To'lovlar
 
-### 5.1 To'lovlar tarixi — `GET getPayments`
+### 5.1 To'lovlar tarixi — `GET getPayments` ✅ tayyor
 
 «🧾 Тўловлар» — mijozning barcha to'lovlari (boshlang'ich to'lovlar, do'konda, onlayn).
 
@@ -391,7 +410,7 @@ GET /hs/client_bot/api/getPayments?client_id=9454
 | `note` | string | izoh («Бошланғич тўлов», «3-тўлов», «Онлайн тўлов»…) |
 | `transaction_id` | string \| null | provayder tranzaksiya raqami (onlayn bo'lsa), naqd bo'lsa `null` |
 
-### 5.2 Onlayn to'lovni boshlash — `POST createPayment`
+### 5.2 Onlayn to'lovni boshlash — `POST createPayment` ✅ tayyor
 
 Mijoz summa va usulni (Payme/Click/Paynet) tanlagach chaqiriladi. 1C **kutilayotgan** to'lov hujjatini yaratadi va `payment_id` qaytaradi. Provayder checkout havolasi backend/merchant tomonida shu `payment_id` bilan hosil qilinadi.
 
@@ -432,7 +451,7 @@ POST /hs/client_bot/api/createPayment
 | Kalit | Tip | Izoh |
 |---|---|---|
 | `payment_id` | id | yaratilgan kutilayotgan to'lov kodi — `confirmPayment`/`cancelPayment` da ishlatiladi, provayderga `order_id` sifatida beriladi |
-| `status` | enum | `pending` |
+| `status` | enum | `pending` (1C hozir `new` qaytaryapti — bot ikkalasini ham qabul qiladi) |
 | `amount` | money | 1C qabul qilgan summa (kamaytirilgan bo'lishi mumkin) |
 | `contract_number` | string | shartnoma raqami |
 | `remaining_after` | money | to'lov o'tgach qoladigan qarz (mijozga oldindan ko'rsatiladi) |
@@ -440,7 +459,7 @@ POST /hs/client_bot/api/createPayment
 
 Xato: `400 PAYMENT_REJECTED` (shartnoma yopilgan, summa ≤ 0 va h.k.).
 
-### 5.3 To'lovni tasdiqlash — `POST confirmPayment`
+### 5.3 To'lovni tasdiqlash — `POST confirmPayment` ⏳ tayyor emas (hozir 500)
 
 Provayderdan (Payme/Click/Paynet callback) muvaffaqiyat kelgach backend chaqiradi. 1C to'lovni o'tkazadi, grafikni **eng eski to'lanmagan qatordan boshlab** yopadi (qisman ham bo'lishi mumkin) va kvitansiya qaytaradi.
 
@@ -496,7 +515,7 @@ POST /hs/client_bot/api/confirmPayment
 
 **Idempotentlik:** bir xil `payment_id` ikkinchi marta kelsa — qayta o'tkazilmasin, o'sha kvitansiya qaytsin.
 
-### 5.4 To'lovni bekor qilish — `POST cancelPayment`
+### 5.4 To'lovni bekor qilish — `POST cancelPayment` ⏳ tayyor emas (hozir 500)
 ```http
 POST /hs/client_bot/api/cancelPayment
 { "payment_id": 90011, "reason": "user_cancel" }
@@ -513,7 +532,7 @@ Javob 200: `{ "success": true, "payment_id": 90011, "status": "cancelled" }`
 
 ---
 
-## 6. Xaridlar tarixi — `GET getPurchases`
+## 6. Xaridlar tarixi — `GET getPurchases` ✅ tayyor
 
 «🛍 Харидлар» — mijoz nimani, qachon, qancha summaga, qaysi shartnoma bilan olgan.
 
@@ -558,7 +577,7 @@ GET /hs/client_bot/api/getPurchases?client_id=9454
 
 ## 7. Mijozga xizmat
 
-### 7.1 Kompaniya ma'lumotlari — `GET getCompanyInfo`
+### 7.1 Kompaniya ma'lumotlari — `GET getCompanyInfo` ✅ tayyor
 
 «📞 Ёрдам» — kontaktlar va filiallar. Parametrsiz.
 
@@ -607,7 +626,7 @@ GET /hs/client_bot/api/getCompanyInfo
 | `branches[].hours` | string | ish vaqti |
 | `branches[].lat` / `lon` | number \| null | koordinatalar (ixtiyoriy; bo'lsa botda xarita tugmasi chiqadi) |
 
-### 7.2 Murojaat / savol — `POST createRequest`
+### 7.2 Murojaat / savol — `POST createRequest` ✅ tayyor
 
 «✍️ Мурожаат қолдириш» va «💡 Савол/таклиф» — 1C da murojaat hujjati yaratiladi, operatorlar ko'radi.
 
@@ -639,7 +658,7 @@ POST /hs/client_bot/api/createRequest
 |---|---|---|
 | `request_id` | id | murojaat raqami — mijozga «№ 1001» deb ko'rsatiladi |
 | `status` | string | `new` (keyin 1C da `in_progress` / `done` bo'lishi mumkin) |
-| `created_at` | datetime | qabul qilingan vaqt |
+| `created_at` | datetime | qabul qilingan vaqt (hujjat: `YYYY-MM-DDTHH:MM:SS`; 1C hozir `DD.MM.YYYY HH:MM:SS` qaytaryapti — bot kechiradi) |
 
 ---
 
@@ -647,7 +666,7 @@ POST /hs/client_bot/api/createRequest
 
 Bot eslatmalarni **o'zi** yuboradi — grafikdan (4-bo'lim) hisoblab: to'lovga 3 kun qolganda, to'lov kuni, kechikkanda. 1C tomonidan faqat mijoz sozlamasi saqlanadi.
 
-### 8.1 Sozlama — `POST setReminders`
+### 8.1 Sozlama — `POST setReminders` ✅ tayyor
 ```http
 POST /hs/client_bot/api/setReminders
 { "client_id": 9454, "chat_id": "66540046", "enabled": false }
@@ -663,12 +682,13 @@ Javob 200: `{ "success": true, "enabled": false }` — holat keyin `getClientInf
 
 ### 8.2 1C → bot voqealari ✅ tayyor (bot tomonida)
 
-«Янги шартнома расмийлаштирилди» va «тўлов қабул қилинди (дўконда/нақд)» xabarlari uchun 1C bot serveriga push yuboradi. Bot tomonida **tayyor**: `POST {BOT_SERVER}/api/1c/events` — autentifikatsiyasiz (sarlavha shart emas). Muvaffaqiyatli javob: `{"success": true, "delivered": true}` (`delivered: false` — mijoz botni bloklagan). Xato: `401 UNAUTHORIZED`, `400 VALIDATION_ERROR`, `404 CHAT_NOT_FOUND`.
+«Янги шартнома расмийлаштирилди» va «тўлов қабул қилинди (дўконда/нақд)» xabarlari uchun 1C bot serveriga push yuboradi. Bot tomonida **tayyor**: `POST {BOT_SERVER}/api/1c/events` — autentifikatsiyasiz (sarlavha shart emas). Muvaffaqiyatli javob: `{"success": true, "delivered": true}` (`delivered: false` — mijoz botni bloklagan). Xato: `400 VALIDATION_ERROR`, `404 BOT_NOT_FOUND` (yuborilgan `bot_id` ishlamayapti), `404 CHAT_NOT_FOUND`.
 
 ```http
 POST {BOT_SERVER}/api/1c/events
 {
   "event": "contract_created",
+  "bot_id": 1,
   "client_id": 9454,
   "chat_id": "66540046",
   "contract_id": 5020,
@@ -681,6 +701,7 @@ POST {BOT_SERVER}/api/1c/events
 | Kalit | Tip | Izoh |
 |---|---|---|
 | `event` | enum | `contract_created` — yangi shartnoma; `payment_received` — to'lov qabul qilindi (offlayn) |
+| `bot_id` | number | `checkNumber` da kelgan `botID` — xabar aynan shu botdan yuboriladi (yuborilmasa bot `chat_id` bo'yicha taxmin qiladi) |
 | `client_id` / `chat_id` | id / string | kimga yuborish |
 | `contract_id` / `contract_number` | id / string | qaysi shartnoma |
 | `amount` | money | shartnoma summasi yoki to'lov summasi |
@@ -690,7 +711,7 @@ Javob: `{ "success": true }`
 
 ---
 
-## 9. Aksiyalar va xabarlar — `GET getPromotions`
+## 9. Aksiyalar va xabarlar — `GET getPromotions` ✅ tayyor
 
 «🎁 Акциялар» — aksiyalar, yangi tovarlar, maxsus takliflar, kompaniya xabarlari.
 
@@ -746,6 +767,7 @@ GET /hs/client_bot/api/getPromotions?type=promo
 | `createRequest` | `create_request` | Мурожаат / Савол-таклиф |
 | `setReminders` | `set_reminders` | Кабинет → 🔔 |
 | `getPromotions` | `get_promotions` | 🎁 Акциялар |
+| *(1C → bot)* `/api/1c/events` | `events_api.receive_event` | Yangi shartnoma / naqd to'lov push-xabari |
 
 ---
 
@@ -760,5 +782,8 @@ GET /hs/client_bot/api/getPromotions?type=promo
 - [ ] `confirmPayment` idempotent: bir xil `payment_id` ikki marta kelsa — ikkilanmaydi, o'sha kvitansiya qaytadi
 - [ ] `createPayment` dan keyin `expires_at` gacha tasdiqlanmasa to'lov `expired`
 - [ ] Enum qiymatlar aynan hujjatdagidek (kichik harf, lotin)
+- [ ] **`getContract` yakka obyekt `{…}` qaytaradi** (hozirgi `[ {…} ]` o'rami olib tashlanadi)
+- [ ] **`confirmPayment` va `cancelPayment` ishga tushiriladi** (hozir 500) — onlayn to'lov shularsiz yakunlanmaydi
+- [ ] `checkNumber` dan kelgan `botID` mijoz kartochkasiga saqlanadi va `/api/1c/events` da `bot_id` sifatida qaytariladi
 
 Savollar: bot/backend jamoasi — `torex.amaki@gmail.com`.
